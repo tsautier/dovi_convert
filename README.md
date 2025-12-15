@@ -46,7 +46,7 @@ This tool converts the file to **Profile 8.1**. It retains the high-quality vide
 ## Usage Guide
 
 ### 1. Analysis
-Before converting, you can check which files in your library are actually Profile 7. The tool identifies Profile 7 (Target), Profile 8.1 (Already compatible), and Profile 5 (Streaming).
+Before converting, you can check which files in your library are actually Profile 7. The tool identifies Profile 7 (Target), Profile 8.1 (Already compatible), and Profile 5 (used by streaming services).
 
 * **Check a single file:**
     ```bash
@@ -57,9 +57,9 @@ Before converting, you can check which files in your library are actually Profil
     dovi_convert -check
     ```
 * **Check recursively (scan subfolders):**
-    Use the `-r` flag followed by the depth level (e.g., scan 3 folders deep).
+    Use the `-r` flag followed by the depth level (e.g., scan 3 folders deep). If no depth is specified, it will scan 3 folders deep (default).
     ```bash
-    dovi_convert -check -r 3
+    dovi_convert -check -r 2
     ```
 
 ---
@@ -82,13 +82,13 @@ dovi_convert -convert "Movie Name.mkv"
 Automatically find and convert all Profile 7 files in a directory tree.
 
 * **Standard Batch (Keep Backups):**
-    This scans the current folder and subfolders (Depth 2 in this example). Originals are kept as backups.
+    This scans the current folder and subfolders (Depth 2 in this example). Originals are kept as backups. If no depth is specified, it will convert all files in the current folder.
     ```bash
     dovi_convert -batch 2
     ```
 
 * **Batch with Auto-Delete (Destructive):**
-    Use the `-delete` flag to automatically remove the original source file **only after** the conversion is verified successfully. Use this if you lack disk space for backups.
+    Use the `-delete` flag to automatically remove the original source file **only after** the conversion is verified successfully. Use this if you lack disk space for backups. Or, if you have used the script often and trust it.
     ```bash
     dovi_convert -batch 2 -delete
     ```
