@@ -33,7 +33,7 @@ This tool converts the file to **Profile 8.1**. It retains the high-quality vide
 
 1.  Clone the repository:
     ```bash
-    git clone [https://github.com/YOUR_USERNAME/dovi_convert.git](https://github.com/YOUR_USERNAME/dovi_convert.git)
+    git clone https://github.com/cryptochrome/dovi_convert.git
     cd dovi_convert
     ```
 
@@ -87,7 +87,7 @@ Automatically find and convert all Profile 7 files in a directory tree.
     dovi_convert -batch 2
     ```
 
-* **Batch with Auto-Delete (Destructive):**
+* **Batch with Auto-Delete (Destructive - THIS LEAVES NO BACKUPS OF YOUR ORIGINALS!):**
     Use the `-delete` flag to automatically remove the original source file **only after** the conversion is verified successfully. Use this if you lack disk space for backups. Or, if you have used the script often and trust it.
     ```bash
     dovi_convert -batch 2 -delete
