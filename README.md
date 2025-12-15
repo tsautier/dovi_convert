@@ -43,24 +43,75 @@ This tool converts the file to **Profile 8.1**. It retains the high-quality vide
     sudo ln -s "$(pwd)/dovi_convert.sh" /usr/local/bin/dovi_convert
     ```
 
-## Usage
+## Usage Guide
 
-**Analyze a file:**
+### 1. Analysis
+Before converting, you can check which files in your library are actually Profile 7. The tool identifies Profile 7 (Target), Profile 8.1 (Already compatible), and Profile 5 (Streaming).
+
+* **Check a single file:**
+    ```bash
+    dovi_convert -check "Movie Name.mkv"
+    ```
+* **Check the current folder:**
+    ```bash
+    dovi_convert -check
+    ```
+* **Check recursively (scan subfolders):**
+    Use the `-r` flag followed by the depth level (e.g., scan 3 folders deep).
+    ```bash
+    dovi_convert -check -r 3
+    ```
+
+---
+
+### 2. Single File Conversion
+This is the safest method for testing. The script will **not** delete your original file.
+
 ```bash
-dovi_convert -check movie.mkv
+dovi_convert -convert "Movie Name.mkv"
 ```
 
-**Convert a single file:**
-```bash
-dovi_convert -convert movie.mkv
-```
+**What happens:**
+1.  The original file is renamed to `Movie Name.mkv.bak.dovi_convert`.
+2.  The new Profile 8.1 version is created as `Movie Name.mkv`.
+3.  Metadata, audio tracks, and chapters are cloned exactly.
 
-**Batch convert a folder (recursively):**
-```bash
-dovi_convert -batch 2
-```
+---
 
-**Cleanup backups (after verifying success):**
-```bash
-dovi_convert -cleanup
-```
+### 3. Batch Processing
+Automatically find and convert all Profile 7 files in a directory tree.
+
+* **Standard Batch (Keep Backups):**
+    This scans the current folder and subfolders (Depth 2 in this example). Originals are kept as backups.
+    ```bash
+    dovi_convert -batch 2
+    ```
+
+* **Batch with Auto-Delete (Destructive):**
+    Use the `-delete` flag to automatically remove the original source file **only after** the conversion is verified successfully. Use this if you lack disk space for backups.
+    ```bash
+    dovi_convert -batch 2 -delete
+    ```
+
+---
+
+### 4. Maintenance & Cleanup
+If you converted files without the `-delete` flag, you will have `.bak.dovi_convert` files taking up space.
+
+* **Smart Cleanup:**
+    This command recursively finds backup files and offers to delete them.
+    ```bash
+    dovi_convert -cleanup
+    ```
+    **Safety Note:** This feature is "Context Aware." It checks if the parent MKV file still exists. If you deleted the converted movie, the script will consider the backup an "Orphan" and **refuse to delete it**, saving you from accidental data loss.
+
+---
+
+### 5. Troubleshooting
+If a conversion fails or you need more details, use the verbose flag.
+
+* **Debug Mode:**
+    Prints the full output of `mkvmerge`, `mkvextract`, and `dovi_tool` to the console.
+    ```bash
+    dovi_convert -convert file.mkv -v
+    ```
