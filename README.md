@@ -17,7 +17,7 @@ This conversion ensures compatibility with media players that do not support the
 
 ## Installation
 
-### Option 1: Quick Download
+### Option 1: Quick Download (latest release version)
 ```bash
 wget https://github.com/cryptochrome/dovi_convert/releases/latest/download/dovi_convert.sh
 chmod +x dovi_convert.sh
