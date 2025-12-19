@@ -24,7 +24,7 @@ chmod +x dovi_convert.sh
 sudo mv dovi_convert.sh /usr/local/bin/dovi_convert
 ```
 
-### Option 2: Clone Repository (Recommended for updates)
+### Option 2: Clone Repository (Recommended for updates - Warning: this will give you the latest version, but it may not be stable)
 This method allows you to easily update the script using `git pull`.
 
 ```bash
