@@ -19,7 +19,7 @@ This conversion ensures compatibility with media players that do not support the
 
 ### Option 1: Quick Download
 ```bash
-wget [https://raw.githubusercontent.com/cryptochrome/dovi_convert/main/dovi_convert.sh](https://raw.githubusercontent.com/cryptochrome/dovi_convert/main/dovi_convert.sh)
+wget https://github.com/cryptochrome/dovi_convert/releases/latest/download/dovi_convert.sh
 chmod +x dovi_convert.sh
 sudo mv dovi_convert.sh /usr/local/bin/dovi_convert
 ```
