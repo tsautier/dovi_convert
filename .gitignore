@@ -15,3 +15,6 @@
 
 # ignore project folder containing notes and other organizational files
 project\ files/
+
+# Internal Agent Configuration
+.agent/
