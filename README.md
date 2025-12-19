@@ -2,7 +2,9 @@
 
 A Bash script to automate the conversion of Dolby Vision Profile 7 MKV files (UHD Blu-ray rips) into Profile 8.1.
 
-This conversion ensures compatibility with media players that do not support the Profile 7 Enhancement Layer (EL), such as the Apple TV 4K (with Plex or Infuse), Nvidia Shield, Zidoo, and other devices, preventing fallback to standard HDR10 and other issues. The result is a highly compatible file that can be played on a wide range of devices, without loss of quality.
+This conversion ensures compatibility with media players that do not support the Profile 7 Enhancement Layer (EL), such as the Apple TV 4K (with Plex or Infuse), Nvidia Shield, Zidoo, and other devices, preventing fallback to standard HDR10 and other issues. The result is a highly compatible file that can be played on a wide range of devices.
+
+
 
 ## Features
 
@@ -72,13 +74,6 @@ Check the Dolby Vision profile of files.
 dovi_convert -check              # Check all files in current directory
 dovi_convert -check "Film.mkv"   # Check specific file
 ```
-
-## Caveats
-
-**Single Video Track Only**
-The converted file will contain exactly one video track (the main movie). Secondary video streams (such as Picture-in-Picture commentary or Multi-Angle views) will be dropped because the conversion process isolates the main video track. All audio and subtitle tracks are preserved.
-*   **Note:** Your original file (containing all tracks) is preserved as a backup, so no data is lost.
-
 ## Troubleshooting
 
 If a conversion fails:
@@ -88,3 +83,22 @@ If a conversion fails:
     dovi_convert -convert "Fail.mkv" -debug
     ```
 2.  Check the log file for errors from `dovi_tool` or `ffmpeg`.
+
+## Caveats and Notes
+
+### 1. Single Video Track Only
+The converted file will contain exactly one video track (the main movie). Secondary video streams (such as Picture-in-Picture commentary or Multi-Angle views) will be dropped because the conversion process isolates the main video track. All audio and subtitle tracks are preserved.
+*   **Note:** Your original file (containing all tracks) is preserved as a backup, so no data is lost.
+
+### 2. Not for absolute video purists - It's a compromise
+This is not for purists who want to retain 1:1 picture information of the original.
+The Enhancement Layer (EL) that is removed during the conversion:
+* contains 12 bit color information (that no consumer TV can display)
+* *can* contain brightness adjustments, additional film grain and noise, and fixes for PQ glitches
+
+**HOWEVER:**
+* Most media players and streaming devices ignore the EL completely, anyways
+* They fall back to standard HDR, or worse, don't play at all or glitch out
+* Often times, the EL contains nothing at all (outside of the 12 bit color information)
+* So you lose nothing compared to the HDR version, but you retain the dynamic Dolby Vison metadata
+
