@@ -32,7 +32,7 @@ chmod +x dovi_convert.sh
 sudo mv dovi_convert.sh /usr/local/bin/dovi_convert
 ```
 
-### From Source
+### From Source (development version)
 ```bash
 git clone https://github.com/cryptochrome/dovi_convert.git && cd dovi_convert
 chmod +x dovi_convert.sh
