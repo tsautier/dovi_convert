@@ -1,134 +1,90 @@
 # dovi_convert
 
-A robust Bash script to automate the conversion of **Dolby Vision Profile 7** MKV files (UHD Blu-ray) into **Profile 8.1**.
+A Bash script to automate the conversion of Dolby Vision Profile 7 MKV files (UHD Blu-ray rips) into Profile 8.1.
 
-This conversion ensures compatibility with media players that do not support the Profile 7 Enhancement Layer (EL), such as the **Apple TV 4K** (via Infuse), **Nvidia Shield**, and **Zidoo** players, preventing them from falling back to standard HDR10.
+This conversion ensures compatibility with media players that do not support the Profile 7 Enhancement Layer (EL), such as the Apple TV 4K (with Plex or Infuse), Nvidia Shield, Zidoo, and other devices, preventing fallback to standard HDR10 and other issues. The result is a highly compatible file that can be played on a wide range of devices, without loss of quality.
 
-## Key Features
-* **Smart Conversion:** Automatically detects Profile 7 files and ignores others (HDR10/SDR/Profile 5).
-* **Two Modes:**
-    * **Standard:** Uses efficient piping (ffmpeg -> dovi_tool) for speed and zero temp storage.
-    * **Safe Mode:** Extracts tracks to disk first. Robust handling for **Seamless Branching** discs (Disney/Marvel) or files with irregular timestamps.
-* **Interactive Batch:** Scans folders, calculates total batch size, and asks for confirmation before processing.
-* **Safety First:**
-    * Original files are **never** overwritten; they are renamed to a specific backup extension.
-    * Cleanup tools are non-recursive by default to prevent accidents.
-    * "Orphan Check" prevents deleting a backup if the main video file is missing.
+## Features
+
+*   **Simple Command Line Interface:** Easy to use if you are comfortable using the terminal.
+*   **Single File Conversion:** Convert individual MKV files.
+*   **Interactive Batch Conversion:** Recursively process entire directory trees.
+*   **Seamless Branching Support:** Handles complex playlists (common on Disney/Marvel discs) to prevent audio sync issues.
+*   **Non-Destructive:** Renames original files to `*.bak.dovi_convert` instead of overwriting.
+
+## Dependencies
+
+*   [ffmpeg](https://ffmpeg.org/download.html)
+*   [dovi_tool](https://github.com/quietvoid/dovi_tool/releases)
+*   [MKVToolNix](https://mkvtoolnix.download/downloads.html)
+*   [MediaInfo](https://mediaarea.net/en/MediaInfo/Download)
+*   [jq](https://jqlang.github.io/jq/download/)
+*   [bc](https://www.gnu.org/software/bc/)
 
 ## Installation
 
-### Option 1: Quick Download (latest release version)
+### Stable Release
 ```bash
 wget https://github.com/cryptochrome/dovi_convert/releases/latest/download/dovi_convert.sh
 chmod +x dovi_convert.sh
 sudo mv dovi_convert.sh /usr/local/bin/dovi_convert
 ```
 
-### Option 2: Clone Repository (Recommended for updates - Warning: this will give you the latest version, but it may not be stable)
-This method allows you to easily update the script using `git pull`.
-
+### From Source
 ```bash
-git clone [https://github.com/cryptochrome/dovi_convert.git](https://github.com/cryptochrome/dovi_convert.git)
-cd dovi_convert
+git clone https://github.com/cryptochrome/dovi_convert.git && cd dovi_convert
 chmod +x dovi_convert.sh
 sudo ln -s "$(pwd)/dovi_convert.sh" /usr/local/bin/dovi_convert
 ```
-
-## Dependencies
-
-Ensure these tools are installed and available in your system `$PATH`:
-
-* `ffmpeg`
-* `dovi_tool`
-* `mkvtoolnix` (`mkvmerge`, `mkvextract`)
-* `mediainfo`
-* `jq`
-* `bc`
 
 ## Usage
 
 ### 1. Single File Conversion
 ```bash
-# Default (Standard Mode)
 dovi_convert -convert "Movie.mkv"
+```
+**Standard Mode:** Uses piping to process the video stream. This is the default and fastest method.
 
-# Safe Mode (Force disk extraction)
+```bash
 dovi_convert -convert "Movie.mkv" -safe
 ```
-* **Standard Mode:** Fastest. Pipes data directly between tools.
-* **Safe Mode:** Slower but more reliable. Use this if Standard Mode fails or if audio/video sync issues occur (common with seamless branching rips).
+**Safe Mode:** Extracts the video track to disk before converting. Use this if the standard mode fails or results in audio desync (common with seamless branching discs).
 
 ### 2. Batch Processing
-Scans the current directory for Profile 7 files.
-
+Scans for Profile 7 files and converts them.
 ```bash
-# Scan current directory and 1 level deep (Default)
-dovi_convert -batch
-
-# Scan 3 levels deep
-dovi_convert -batch 3
-
-# Automated mode (Skip interactive confirmation)
-dovi_convert -batch -y
+dovi_convert -batch           # Scan current directory only
+dovi_convert -batch 2         # Scan 2 folders deep
+dovi_convert -batch -y        # Run without confirmation prompts
 ```
-**Interactive Flow:**
-The tool will:
-1.  Scan the directory.
-2.  Display the number of files found and the **Total Batch Size** (GB).
-3.  Ask if you want to see the file list.
-4.  Ask for confirmation to proceed.
 
-Use the `-y` flag to skip these questions and start immediately.
-
-### 3. Cleanup (Disk Space Recovery)
-Delete the backup files (`*.mkv.bak.dovi_convert`) generated during conversion.
-
+### 3. Cleanup
+Deletes the `.bak.dovi_convert` backup files created during conversion.
 ```bash
-# Clean current directory ONLY
-dovi_convert -cleanup
-
-# Clean RECURSIVELY (All subfolders)
-dovi_convert -cleanup -r
-
-# Auto-confirm deletion (No yes/no prompt)
-dovi_convert -cleanup -y
+dovi_convert -cleanup         # Clean current dir only
+dovi_convert -cleanup -r      # Clean recursively
 ```
-**Safety Note:** The cleanup command checks for the "Parent" MKV. If the main movie file is missing, the backup is treated as an "Orphan" and will **not** be deleted to prevent data loss.
+**Safety Note:** The script checks if the "Parent" MKV exists. If the main movie file is missing, the backup is treated as an "Orphan" and will **not** be deleted.
 
 ### 4. Analysis
-Check the Dolby Vision profile of a file without converting.
+Check the Dolby Vision profile of files.
 ```bash
-dovi_convert -check "Movie.mkv"
-
-# Recursively check all files in folder
-dovi_convert -check -r
+dovi_convert -check              # Check all files in current directory
+dovi_convert -check "Film.mkv"   # Check specific file
 ```
 
-## Global Options
+## Caveats
 
-| Flag | Description |
-| :--- | :--- |
-| `-safe` | Forces Safe Mode (Disk Extraction). Useful for problematic files. |
-| `-delete`| **Auto-Delete Backup.** Deletes the original source file immediately after a successful conversion/verification. Use with caution. |
-| `-debug` | Generates a `dovi_convert_debug.log` file containing full ffmpeg/dovi_tool output. |
-| `-y` | **Auto-Yes.** Automatically answers "Yes" to start-up prompts (Batch Start / Cleanup Deletion). **Note:** This does *not* override safety decisions like Safe Mode fallback. |
-
-## Important Caveats
-
-**1. Single Video Track Output**
-The conversion process isolates the main video track to inject the RPU (Dolby Vision metadata). As a result, **secondary video tracks** (such as Picture-in-Picture commentary, Storyboards, or Multi-Angle views) will be dropped in the converted file.
-* **Note:** Your original file (containing all tracks) is preserved as a backup, so no data is lost.
-
-**2. Seamless Branching**
-Movies authored with "Seamless Branching" (often Disney/Pixar/Marvel discs) effectively stitch multiple video files together. This can cause timestamp errors in `ffmpeg`.
-* If Standard Mode fails, the script will suggest **Safe Mode**.
-* Safe Mode extracts the raw HEVC stream to disk first, which usually resolves these synchronization issues.
+**Single Video Track Only**
+The converted file will contain exactly one video track (the main movie). Secondary video streams (such as Picture-in-Picture commentary or Multi-Angle views) will be dropped because the conversion process isolates the main video track. All audio and subtitle tracks are preserved.
+*   **Note:** Your original file (containing all tracks) is preserved as a backup, so no data is lost.
 
 ## Troubleshooting
 
 If a conversion fails:
-1.  Run the command with the `-debug` flag:
+
+1.  Run the command with the `-debug` flag to generate a full log (`dovi_convert_debug.log`):
     ```bash
     dovi_convert -convert "Fail.mkv" -debug
     ```
-2.  Check the generated `dovi_convert_debug.log` file. It will contain the specific error messages from `dovi_tool` or `ffmpeg`.
+2.  Check the log file for errors from `dovi_tool` or `ffmpeg`.
