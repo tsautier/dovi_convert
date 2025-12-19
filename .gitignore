@@ -1,0 +1,14 @@
+# Standard backup extension
+*.bak
+
+# Temporary files ending in ~ (common in Linux editors like nano/gedit)
+*~
+
+# Vim swap files
+*.swp
+
+# macOS system files
+.DS_Store
+
+# macOS hidden files
+._*

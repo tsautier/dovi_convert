@@ -1,50 +1,51 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v6.3)
+# dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v6.4.2)
 #
 # DESCRIPTION:
-#   This tool automates the conversion of Dolby Vision Profile 7 MKV files (UHD Blu-ray)
-#   into Profile 8.1. This ensures compatibility with devices that do not support the
-#   Enhancement Layer (Apple TV 4K, Shield, etc.), preventing fallback to HDR and other issues.
+#   Automates conversion of Dolby Vision Profile 7 MKV files (UHD Blu-ray)
+#   into Profile 8.1. This ensures compatibility with devices that do not support
+#   the Enhancement Layer (Apple TV 4K, Shield, etc.).
 #
-# KEY FEATURES:
-#   - Safe Mode: Never modifies the original file in place (creates specific backup).
-#   - FPS Enforcement: Fixes mkvmerge's tendency to default raw streams to 25fps.
-#   - Verification: Compares frame counts before swapping files to prevent data loss.
-#   - Batch Processing: Recursively scans and converts entire libraries.
-#   - Smart Cleanup: Only deletes backups created by this specific tool, and only
-#     if the parent file still exists.
+# NEW IN v6.4:
+#   - STANDARD MODE (Default): Uses ffmpeg piping for 2x speed and zero temp storage.
+#   - SMART FALLBACK: Detects stream errors (seamless branching) and offers Safe Mode.
+#   - BATCH INTELLIGENCE: Auto-skips corrupt files, auto-kills on full disk.
+#   - USER EXPERIENCE: Robust Spinner, metrics, and pagination.
 #
-# DEPENDENCIES:
-#   mkvmerge, mkvextract (MKVToolNix), dovi_tool, mediainfo, jq, bc
+# NEW IN v6.4.2:
+#   - DEBUG MODE: Replaces -v. Logs to 'dovi_convert_debug.log' for troubleshooting.
+#   - UNIFIED LOGGING: Smart error analysis now works in all modes.
+#   - CLEANUP UI: Now lists files before deletion. Non-recursive by default.
+#   - BATCH UI: Added file list overview and confirmation steps.
+#   - SAFETY: Strict argument validation and safe Auto-Yes (-y) scoping.
+#   - DOCS: Added caveats for multi-track files.
 # =============================================================================
 
 # --- Configuration & Constants ---
-BOLD="\033[1m"
-RED="\033[31m"
-GREEN="\033[32m"
-YELLOW="\033[33m"
-CYAN="\033[36m"
-RESET="\033[0m"
+BOLD="\033[1m"; RED="\033[31m"; GREEN="\033[32m"; YELLOW="\033[33m"; CYAN="\033[36m"; RESET="\033[0m"
 
 # Default Runtime Flags
-VERBOSE_MODE=false      # Toggled by -v
+DEBUG_MODE=false        # Toggled by -debug
 BATCH_RUNNING=false     # Internal state flag
-DELETE_BACKUP=false     # Toggled by -delete (Caution: Destructive)
+ABORT_REQUESTED=false   # Internal flag for Ctrl+C handling
+DELETE_BACKUP=false     # Toggled by -delete
+SAFE_MODE=false         # Toggled by -safe
+AUTO_YES=false          # Toggled by -y
+
+# Global Variables for Metrics
+START_TIME=0
+ORIG_SIZE=0
 
 # --- Pre-Flight: Safety Check ---
-# Prevents "shell-init: error retrieving current directory" if the user
-# runs the script from a directory that was deleted/replaced (common in testing).
 if ! pwd > /dev/null 2>&1; then
-    echo -e "${RED}Error: Your terminal is in a 'ghost' directory.${RESET}"
-    echo "Please run 'cd .' or restart your terminal."
+    echo -e "${RED}Error: Ghost directory detected.${RESET} Please 'cd .' or restart terminal."
     exit 1
 fi
 
 # --- Pre-Flight: Dependency Check ---
-# Ensures all required binaries are installed and accessible in the system PATH.
-for tool in mkvmerge mkvextract dovi_tool mediainfo jq bc; do
+for tool in mkvmerge mkvextract dovi_tool mediainfo jq bc ffmpeg; do
     if ! command -v "$tool" &> /dev/null; then
         echo -e "${RED}Error: Missing dependency '$tool'.${RESET}"
         echo "Please install it using your system's package manager."
@@ -53,155 +54,267 @@ for tool in mkvmerge mkvextract dovi_tool mediainfo jq bc; do
 done
 
 # --- Helper Functions ---
+human_size_gb() { echo $(echo "scale=2; $1/1024/1024/1024" | bc) "GB"; }
+get_file_size() { stat -f%z "$1" 2>/dev/null || stat -c%s "$1"; }
 
-# Convert bytes to human-readable MB/GB
-human_size() {
-    echo $(echo "scale=2; $1/1024/1024" | bc) "MB"
-}
-human_size_gb() {
-    echo $(echo "scale=2; $1/1024/1024/1024" | bc) "GB"
-}
-
-# Send macOS system notification (No-op on Linux/Windows)
 send_notification() {
-    local title="$1"
-    local message="$2"
+    local title="$1"; local message="$2"
     if [[ "$OSTYPE" == "darwin"* ]]; then
         osascript -e "display notification \"$message\" with title \"$title\" sound name \"Glass\"" 2>/dev/null
     fi
 }
 
-# Concise usage guide (Default output)
-print_usage() {
-    echo -e "${BOLD}dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter${RESET}"
-    echo "Usage:"
-    echo "  dovi_convert -check             : Analyze all files in current folder."
-    echo "  dovi_convert -check [file]      : Analyze a specific file."
-    echo "  dovi_convert -check -r [depth]  : Recursively analyze files (default depth: 3)."
-    echo "  dovi_convert -convert [file]    : Convert a file (Safe Mode: Creates .bak.dovi_convert)."
-    echo "  dovi_convert -batch [depth]     : Convert ALL P7 files in folder (default depth: 1)."
-    echo "  dovi_convert -cleanup           : Find and delete tool-specific backups."
-    echo "  dovi_convert -help              : Show detailed manual and explanations."
-    echo ""
-    echo "Options:"
-    echo "  -delete                         : Auto-delete the Original Source (.bak) after success."
-    echo "  -v                              : Debug mode (shows verbose output)."
-    echo ""
-    echo "Examples:"
-    echo "  dovi_convert -batch 5 -delete   : Batch convert and delete originals upon success."
-    echo "  dovi_convert -convert movie.mkv : Convert and keep original as backup."
+# --- UI: Robust Spinner (Cursor Hiding + Line Clearing) ---
+spinner_pid=""
+start_spinner() {
+    local label_text="$1"
+    set +m # Silence job control messages
+
+    # 1. Hide Cursor
+    printf "\e[?25l"
+
+    # Check for UTF-8 support
+    local use_braille=false
+    if [[ "$LANG" == *"UTF-8"* ]] || [[ "$LC_ALL" == *"UTF-8"* ]]; then
+        use_braille=true
+    fi
+
+    (
+        local delay=0.1
+        local spinstr
+        if [[ "$use_braille" == true ]]; then
+            spinstr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+        else
+            spinstr='|/-\'
+        fi
+
+        local step_start=$SECONDS
+        while :; do
+            local temp=${spinstr#?}
+            local char=${spinstr%"$temp"}
+            local elapsed=$((SECONDS - step_start))
+            local min=$((elapsed / 60))
+            local sec=$((elapsed % 60))
+
+            # 2. The Animation Loop
+            printf "\r\e[K%s %s (%dm %02ds)" "$label_text" "$char" "$min" "$sec"
+
+            local spinstr=$temp$char
+            sleep $delay
+        done
+    ) &
+    spinner_pid=$!
 }
 
-# Detailed manual page (Triggered by -help)
+stop_spinner() {
+    if [[ -n "$spinner_pid" ]]; then
+        kill "$spinner_pid" >/dev/null 2>&1
+        wait "$spinner_pid" >/dev/null 2>&1
+        spinner_pid=""
+        # 3. Restore Cursor
+        printf "\e[?25h"
+    fi
+}
+
+# --- UI: Conversion Metrics ---
+print_metrics() {
+    local final_file="$1"
+    local frame_count="$2"
+
+    local duration=$((SECONDS - START_TIME))
+    local min=$((duration / 60))
+    local sec=$((duration % 60))
+
+    local final_size=$(get_file_size "$final_file")
+    local size_diff=$((ORIG_SIZE - final_size))
+
+    if [[ $size_diff -lt 0 ]]; then size_diff=0; fi
+
+    local orig_gb=$(human_size_gb $ORIG_SIZE)
+    local final_gb=$(human_size_gb $final_size)
+
+    # Dynamic Unit Logic
+    local diff_disp=""
+    if [[ $size_diff -ge 1073741824 ]]; then
+        diff_disp="$(echo "scale=2; $size_diff/1024/1024/1024" | bc) GB"
+    else
+        diff_disp="$(echo "scale=2; $size_diff/1024/1024" | bc) MB"
+    fi
+
+    local fps=0
+    if [[ $duration -gt 0 ]]; then fps=$((frame_count / duration)); fi
+
+    echo "---------------------------------------------------"
+    echo -e "             ${BOLD}CONVERSION METRICS${RESET}"
+    echo "---------------------------------------------------"
+    printf "Time Taken:    %dm %02ds\n" "$min" "$sec"
+    printf "Orig Size:     %s\n" "$orig_gb"
+    printf "Final Size:    %s\n" "$final_gb"
+    printf "EL Discarded:  %s (Space Saved)\n" "$diff_disp"
+    printf "Avg Speed:     %s fps\n" "$fps"
+    echo "---------------------------------------------------"
+}
+
+# Concise usage guide
+print_usage() {
+    echo -e "${BOLD}dovi_convert v6.4.2${RESET}"
+    echo "Usage:"
+    echo "  dovi_convert -check [file]          : Analyze file profile."
+    echo "  dovi_convert -convert [file]        : Convert (Default: Standard Pipe)."
+    echo "  dovi_convert -convert [file] -safe  : Convert using Safe Mode (Disk Extraction)."
+    echo "  dovi_convert -batch [depth] [-y]    : Batch convert folder (-y to auto-confirm)."
+    echo "  dovi_convert -cleanup [-r] [-y]     : Delete tool backups (Optional: -r recursive)."
+    echo "  dovi_convert -help                  : Show detailed manual."
+    echo ""
+    echo "Options:"
+    echo "  -safe   : Force extraction to disk (Robust for Seamless Branching rips)."
+    echo "  -delete : Auto-delete backups on success."
+    echo "  -debug  : Generate dovi_convert_debug.log (Preserved on exit)."
+    echo "  -y      : Auto-answer 'Yes' to confirmation prompts (Batch/Cleanup)."
+}
+
+# Detailed manual page
 print_help() {
     echo -e "${BOLD}dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter${RESET}"
     echo ""
     echo -e "${BOLD}DESCRIPTION${RESET}"
     echo "  This tool automates the conversion of Dolby Vision Profile 7 MKV files (UHD Blu-ray)"
     echo "  into Profile 8.1. This ensures compatibility with devices that do not support the"
-    echo "  Enhancement Layer (Apple TV 4K, Shield, etc.), preventing fallback to HDR and other issues."
+    echo "  Enhancement Layer (Apple TV 4K, Shield, etc.), preventing fallback to HDR10."
+    echo ""
+    echo -e "${BOLD}MODES OF OPERATION${RESET}"
+    echo -e "  ${BOLD}1. Standard Mode (Default)${RESET}"
+    echo "     Pipes the video stream directly into the conversion tool."
+    echo "     Fast, efficient, and requires zero temporary disk space."
+    echo ""
+    echo -e "  ${BOLD}2. Safe Mode (-safe)${RESET}"
+    echo "     Extracts the video track to a temporary file on disk, then converts."
+    echo "     Slower, but robust against files with irregular timestamps or"
+    echo "     'Seamless Branching' structures (common on Disney/Marvel discs)."
+    echo "     The tool will automatically offer this mode if Standard conversion fails."
     echo ""
     echo -e "${BOLD}BACKUP STRATEGY${RESET}"
-    echo "  The tool uses a specific naming convention to prevent accidental deletion of manual backups."
+    echo "  The tool automatically preserves your original file before any modification."
+    echo "  It uses a specific naming convention to distinguish its backups from your own files."
     echo -e "  Backup File: ${CYAN}[filename].mkv.bak.dovi_convert${RESET}"
     echo ""
-    echo -e "${BOLD}HOW IT WORKS${RESET}"
-    echo -e "  1. ${BOLD}Extracts${RESET} the HEVC video track."
-    echo -e "  2. ${BOLD}Converts${RESET} the metadata (RPU) to Profile 8.1 and discards the unused EL."
-    echo -e "  3. ${BOLD}Muxes${RESET} a new MKV, cloning all audio/subs and enforcing the original FPS."
-    echo -e "  4. ${BOLD}Verifies${RESET} that the new file has the exact frame count as the source."
-    echo -e "  5. ${BOLD}Swaps${RESET} the new file with the original. The original is renamed to backup."
+    echo "  The -cleanup command will ONLY target files with this specific extension."
+    echo ""
+    echo -e "${BOLD}KNOWN LIMITATION: Single Video Track${RESET}"
+    echo -e "  The ${BOLD}converted${RESET} file will contain exactly one video track (the main movie)."
+    echo "  Any secondary video streams (e.g., Picture-in-Picture commentary or Multi-Angle views)"
+    echo "  will be dropped because the conversion process isolates the main video track."
+    echo ""
+    echo -e "  ${BOLD}No Risk of Data Loss:${RESET} Your original source file (containing all tracks)"
+    echo "  is automatically preserved as a backup. You can restore it if needed."
     echo ""
     echo -e "${BOLD}COMMANDS${RESET}"
     echo ""
     echo -e "  ${BOLD}-check [file]${RESET}"
-    echo "      Analyzes the Dolby Vision profile of a file."
-    echo -e "      Use ${BOLD}-check -r [depth]${RESET} to scan folders recursively."
+    echo "       Analyze the Dolby Vision profile of a file."
+    echo -e "       Use ${BOLD}-check -r [depth]${RESET} to scan folders recursively."
     echo ""
     echo -e "  ${BOLD}-convert [file]${RESET}"
-    echo "      Converts a single file. Safe Mode is active by default:"
-    echo -e "      The original file is NOT deleted; it is renamed to ${CYAN}*.mkv.bak.dovi_convert${RESET}."
+    echo "       Converts a single file to Profile 8.1."
+    echo "       The original file is NOT deleted; it is renamed to *.mkv.bak.dovi_convert."
     echo ""
     echo -e "  ${BOLD}-batch [depth]${RESET}"
-    echo "      Recursively finds and converts all Profile 7 files in the current folder"
-    echo "      and subfolders (up to 'depth' levels deep)."
+    echo "       Recursively finds and converts all Profile 7 files in the current folder"
+    echo "       and subfolders (up to 'depth' levels deep)."
+    echo "       Use -y to skip the interactive confirmation steps."
     echo ""
     echo -e "  ${BOLD}-cleanup${RESET}"
-    echo -e "      Scans for ${CYAN}*.mkv.bak.dovi_convert${RESET} files recursively."
-    echo -e "      ${BOLD}Smart Safety:${RESET} This command checks if the 'Parent' MKV exists."
-    echo "      If the main movie file is missing, the backup is treated as an 'Orphan'"
-    echo "      and will NOT be deleted, preventing accidental data loss."
+    echo -e "       Scans for and deletes ${CYAN}*.mkv.bak.dovi_convert${RESET} files in the current directory."
+    echo -e "       Use ${BOLD}-cleanup -r${RESET} to scan recursively."
+    echo -e "       Use ${BOLD}-y${RESET} to skip the deletion confirmation."
+    echo -e "       ${BOLD}Smart Safety:${RESET} This command checks if the 'Parent' MKV exists."
+    echo "       If the main movie file is missing, the backup is treated as an 'Orphan'"
+    echo "       and will NOT be deleted, preventing accidental data loss."
     echo ""
     echo -e "${BOLD}OPTIONS${RESET}"
     echo ""
-    echo -e "  ${BOLD}-delete${RESET}"
-    echo -e "      ${YELLOW}Auto-Delete Mode.${RESET}"
-    echo -e "      Automatically deletes the backup (Original Source) file immediately"
-    echo "      after a successful conversion and verification."
-    echo "      Use this for large batches where you don't have disk space to store backups."
+    echo -e "  ${BOLD}-safe${RESET}"
+    echo -e "       ${YELLOW}Force Safe Mode (Extraction).${RESET}"
+    echo "       Forces extraction of the video track to disk before converting."
+    echo "       This is the robust fallback method usually triggered automatically on error,"
+    echo "       but you can force it manually here for known problematic files."
     echo ""
-    echo -e "  ${BOLD}-v${RESET}"
-    echo -e "      ${YELLOW}Verbose Mode.${RESET}"
-    echo "      Prints full output from mkvmerge/dovi_tool. Useful for debugging errors."
+    echo -e "  ${BOLD}-delete${RESET}"
+    echo -e "       ${YELLOW}Auto-Delete Mode.${RESET}"
+    echo "       Automatically deletes the backup (Original Source) file immediately"
+    echo "       after a successful conversion and verification."
+    echo "       Use this for large batches where you don't have disk space to store backups."
+    echo ""
+    echo -e "  ${BOLD}-debug${RESET}"
+    echo -e "       ${YELLOW}Debug Mode.${RESET}"
+    echo "       Generates a 'dovi_convert_debug.log' file in the current directory"
+    echo "       containing full ffmpeg/dovi_tool output. Essential for troubleshooting."
+    echo ""
+    echo -e "  ${BOLD}-y${RESET}"
+    echo -e "       ${YELLOW}Auto-Yes Mode.${RESET}"
+    echo "       Automatically answers 'Yes' to confirmation prompts (Batch Start / Cleanup)."
+    echo "       Does NOT override safety decisions (like Safe Mode fallback)."
 }
 
-# Cleanup Handler (Traps Ctrl+C and script exits)
+# --- Cleanup Logic (Soft Stop Handler) ---
 cleanup_and_exit() {
     local exit_code=${1:-1}
 
-    # Remove large temporary files if they exist (clean slate)
-    if [[ -n "$raw_hevc" ]]; then
-        if [[ -f "$raw_hevc" ]] || [[ -f "$conv_hevc" ]] || [[ -f "$temp_mkv" ]]; then
-            if [[ "$VERBOSE_MODE" == true ]]; then
-                echo -e "\n${YELLOW}Cleaning up temporary files...${RESET}"
-            fi
-            rm -f "$raw_hevc" "$conv_hevc" "$temp_mkv"
-        fi
-    fi
+    stop_spinner
+    printf "\e[?25h" # SAFETY: Ensure cursor is visible if user hits Ctrl+C
 
-    # Remove temporary log file if verbose mode is OFF
-    if [[ -n "$cmd_log" && -f "$cmd_log" && "$VERBOSE_MODE" == false ]]; then
+    # Cleanup temp files
+    if [[ -n "$raw_hevc" && -f "$raw_hevc" ]]; then rm -f "$raw_hevc"; fi
+    if [[ -n "$conv_hevc" && -f "$conv_hevc" ]]; then rm -f "$conv_hevc"; fi
+    if [[ -n "$temp_mkv" && -f "$temp_mkv" ]]; then rm -f "$temp_mkv"; fi
+
+    # Cleanup Log (Conditional)
+    if [[ -n "$cmd_log" && -f "$cmd_log" && "$DEBUG_MODE" == false ]]; then
         rm -f "$cmd_log"
     fi
 
-    # If running in batch mode, we return to the loop instead of killing the script
-    if [[ "$BATCH_RUNNING" == true ]]; then
-        return $exit_code
+    # Handle User Interrupt (Ctrl+C)
+    if [[ $exit_code -eq 130 ]]; then
+        echo -e "\n${YELLOW}[!] Process Interrupted by User.${RESET}"
+        echo -e "${YELLOW}[!] Cleaning up incomplete files... Done.${RESET}"
+        echo -e "${GREEN}[✓] Original Source file is safe and untouched.${RESET}"
+        ABORT_REQUESTED=true
+
+        if [[ "$BATCH_RUNNING" == true ]]; then return 130; else echo "Exiting."; exit 130; fi
     fi
+
+    if [[ "$BATCH_RUNNING" == true ]]; then return $exit_code; fi
     exit $exit_code
 }
-
 trap 'cleanup_and_exit 130' SIGINT SIGTERM
 
 # --- Analysis Logic ---
-# Scans a file to determine its Dolby Vision Profile (7, 8, or 5).
-# Populates global variables: VIDEO_TRACK_ID, DOVI_STATUS, ACTION.
 analyze_file() {
     local file="$1"
-    VIDEO_TRACK_ID=""; VIDEO_DELAY="0"; VIDEO_LANG=""; VIDEO_NAME=""; DOVI_STATUS=""; ACTION=""
+    VIDEO_TRACK_ID=""; VIDEO_DELAY="0"; VIDEO_LANG=""; VIDEO_NAME="";
+    DOVI_STATUS=""; ACTION=""
 
-    # 1. Use mkvmerge to get track ID and properties (JSON format)
+    # 1. Get Track ID & Properties
     local mkv_json
     mkv_json=$(mkvmerge -J "$file")
-
     VIDEO_TRACK_ID=$(echo "$mkv_json" | jq -r '.tracks[] | select(.type=="video") | .id' | head -n 1)
 
     if [[ -z "$VIDEO_TRACK_ID" ]]; then
         DOVI_STATUS="${RED}No Video Track${RESET}"; ACTION="SKIP"; return
     fi
 
-    # Extract useful metadata to preserve during muxing
     VIDEO_DELAY=$(echo "$mkv_json" | jq -r ".tracks[] | select(.id==$VIDEO_TRACK_ID) | .properties.minimum_timestamp // 0")
     VIDEO_LANG=$(echo "$mkv_json" | jq -r ".tracks[] | select(.id==$VIDEO_TRACK_ID) | .properties.language // \"und\"")
     VIDEO_NAME=$(echo "$mkv_json" | jq -r ".tracks[] | select(.id==$VIDEO_TRACK_ID) | .properties.track_name // empty")
 
-    # 2. Use MediaInfo to get the specific Dolby Profile string (e.g., dvhe.07)
+    # 2. Get Dolby Profile
     local mi_json
     mi_json=$(mediainfo --Output=JSON "$file")
+
     local combined_info
     combined_info=$(echo "$mi_json" | jq -r '.media.track[] | select(.["@type"]=="Video") | "\(.HDR_Format) \(.HDR_Format_Profile) \(.CodecID)"' | tr '\n' ' ')
 
-    # 3. Decision Logic
+    # 3. Decision Matrix
     if [[ "$combined_info" == *"dvhe.07"* ]] || [[ "$combined_info" == *"Profile 7"* ]]; then
         DOVI_STATUS="${RED}Profile 7 (FEL/MEL)${RESET}"; ACTION="CONVERT"
     elif [[ "$combined_info" == *"dvhe.08"* ]] || [[ "$combined_info" == *"Profile 8"* ]]; then
@@ -216,39 +329,138 @@ analyze_file() {
 }
 
 # Command Wrapper
-# Handles stdout/stderr redirection based on -v flag.
 run_logged() {
-    local cmd_log=$(mktemp)
-    if [[ "$VERBOSE_MODE" == true ]]; then
-        "$@"
-        local status=$?
+    local cmd_log=""
+    if [[ "$DEBUG_MODE" == true ]]; then
+        cmd_log="dovi_convert_debug.log"
+        echo "--- Command: $* ---" >> "$cmd_log"
     else
-        "$@" > "$cmd_log" 2>&1
-        local status=$?
+        cmd_log=$(mktemp)
     fi
 
+    "$@" > "$cmd_log" 2>&1
+    local status=$?
+
     if [[ $status -ne 0 ]]; then
-        if [[ "$VERBOSE_MODE" == false ]]; then
-            echo -e "${RED}Command Failed. Output:${RESET}"
-            cat "$cmd_log"
+        if [[ $status -eq 130 ]]; then
+            if [[ "$DEBUG_MODE" == false ]]; then rm -f "$cmd_log"; fi
+            return 130
         fi
-        rm -f "$cmd_log"
+
+        echo -e "${RED}Command Failed. Output:${RESET}"
+        cat "$cmd_log"
+
+        if [[ "$DEBUG_MODE" == false ]]; then rm -f "$cmd_log"; fi
         return $status
     fi
-    rm -f "$cmd_log"
+
+    if [[ "$DEBUG_MODE" == false ]]; then rm -f "$cmd_log"; fi
     return 0
 }
 
-# --- Core Conversion Logic ---
+# --- Conversion Method: Standard (Pipe) ---
+convert_turbo() {
+    local input="$1"
+    local output="$2"
+    local status=0
 
+    # Initialize log file based on mode
+    if [[ "$DEBUG_MODE" == true ]]; then
+        cmd_log="dovi_convert_debug.log"
+        echo "--- Standard Pipe Start: $input ---" >> "$cmd_log"
+    else
+        cmd_log=$(mktemp)
+    fi
+
+    # UI: Uniform Spinner
+    start_spinner "[1/3] Converting... "
+
+    # Unified Pipe Logic: Logs always captured to target log file
+    set -o pipefail
+    (ffmpeg -y -v error -i "$input" -c:v copy -bsf:v hevc_mp4toannexb -f hevc - 2>> "$cmd_log" \
+    | dovi_tool -m 2 convert --discard - -o "$output" >> "$cmd_log" 2>&1)
+    status=$?
+    set +o pipefail
+
+    stop_spinner
+
+    # Success Case
+    if [[ $status -eq 0 ]]; then
+        printf "\r\e[K[1/3] Converting... Done.\n"
+        if [[ "$DEBUG_MODE" == false ]]; then rm -f "$cmd_log"; fi
+        return 0
+    fi
+
+    # --- ERROR HANDLING ---
+
+    # 1. Check for User Abort (Ctrl+C)
+    if [[ $status -eq 130 ]] || [[ "$ABORT_REQUESTED" == true ]]; then
+          rm -f "$output"
+          if [[ "$DEBUG_MODE" == false ]]; then rm -f "$cmd_log"; fi
+          return 130
+    fi
+
+    rm -f "$output"
+
+    # 2. Smart Analysis (Grepping the active log file)
+    if grep -q -E "No space left on device|Permission denied|Read-only file system" "$cmd_log"; then
+        echo "CRITICAL" > "$cmd_log.status"
+        cat "$cmd_log" # Print error to user
+        if [[ "$DEBUG_MODE" == false ]]; then rm -f "$cmd_log"; fi
+        return 1
+    fi
+
+    if grep -q -E "Invalid data|Invalid NAL unit|conversion failed|Error splitting" "$cmd_log"; then
+        echo "STREAM_ERROR" > "$cmd_log.status"
+        if [[ "$DEBUG_MODE" == false ]]; then rm -f "$cmd_log"; fi
+        return 1
+    fi
+
+    echo "UNKNOWN" > "$cmd_log.status"
+    cat "$cmd_log" # Print unknown error to user
+    if [[ "$DEBUG_MODE" == false ]]; then rm -f "$cmd_log"; fi
+    return 1
+}
+
+# --- Conversion Method: Safe (Extraction) ---
+convert_legacy() {
+    local input="$1"
+    local output="$2"
+    local raw_temp="${input%.*}.raw.hevc"
+    raw_hevc="$raw_temp"
+
+    # Extraction Step
+    start_spinner "[Safe] Extracting... "
+    run_logged mkvextract "$input" tracks "$VIDEO_TRACK_ID:$raw_temp"
+    local res=$?
+    stop_spinner
+
+    if [[ $res -eq 0 ]]; then printf "\r\e[K[Safe] Extracting... Done.\n"; fi
+
+    if [[ $res -eq 130 ]] || [[ "$ABORT_REQUESTED" == true ]]; then return 130; fi
+    if [[ $res -ne 0 ]]; then return 1; fi
+
+    # Conversion Step
+    start_spinner "[Safe] Converting... "
+    run_logged dovi_tool -m 2 convert --discard "$raw_temp" -o "$output"
+    local status=$?
+    stop_spinner
+
+    if [[ $status -eq 0 ]]; then printf "\r\e[K[Safe] Converting... Done.\n"; fi
+
+    rm -f "$raw_temp"
+    if [[ $status -eq 130 ]]; then return 130; fi
+    return $status
+}
+
+# --- Main Conversion Logic ---
 cmd_convert() {
     local file="$1"
-    local mode="$2" # "manual" or "auto"
+    local mode="$2"
 
     if [[ ! -f "$file" ]]; then echo "File not found: $file"; return 1; fi
     analyze_file "$file"
 
-    # Skip files that don't need conversion (unless forced in manual mode)
     if [[ "$ACTION" == "IGNORE" || "$ACTION" == "SKIP" ]]; then
         if [[ "$mode" == "auto" ]]; then return 2; fi
         echo -e "${YELLOW}Notice: Not Profile 7 ($file).${RESET}"
@@ -259,98 +471,111 @@ cmd_convert() {
 
     echo -e "${BOLD}Processing:${RESET} $file"
     base_name="${file%.*}"
-    raw_hevc="${base_name}.raw.hevc"
     conv_hevc="${base_name}.p81.hevc"
     temp_mkv="${base_name}.p81.mkv"
-
-    # NEW: Specific Backup Extension to namespace our backups
     local backup_mkv="${file}.bak.dovi_convert"
 
-    # NEW: Safety Check - Prevent overwriting an existing tool-specific backup
     if [[ -f "$backup_mkv" ]]; then
         echo -e "${RED}Skipping: Backup file already exists.${RESET}"
-        echo -e "Found: ${CYAN}$(basename "$backup_mkv")${RESET}"
-        echo "Please delete or move the existing backup to proceed."
         return 1
     fi
 
-    # --- Step 0: FPS Safety Check ---
-    # We must know the exact FPS to prevent mkvmerge from defaulting to 25fps.
-    # If MediaInfo cannot read the header, the file is likely corrupt -> Fail Fast.
+    # Initialize Metrics
+    START_TIME=$SECONDS
+    ORIG_SIZE=$(get_file_size "$file")
+
+    # Step 0: FPS Safety
     local fps_orig=$(mediainfo --Output="Video;%FrameRate%" "$file")
-    if [[ -z "$fps_orig" ]]; then
-        echo -e "${RED}Error: Could not detect Frame Rate.${RESET}"
-        echo "The source file header may be corrupt or unreadable."
-        cleanup_and_exit 1
-        return 1
+    if [[ -z "$fps_orig" ]]; then echo -e "${RED}Error: Could not detect Frame Rate.${RESET}"; return 1; fi
+
+    # Step 1 & 2: Extraction & Conversion
+    local conversion_done=false
+
+    if [[ "$SAFE_MODE" == true ]]; then
+        if ! convert_legacy "$file" "$conv_hevc"; then
+            if [[ "$ABORT_REQUESTED" == true ]]; then return 130; fi
+            echo "${RED}Safe Mode Failed.${RESET}"; cleanup_and_exit 1; return 1
+        fi
+        conversion_done=true
+    else
+        convert_turbo "$file" "$conv_hevc"
+        local turbo_res=$?
+
+        if [[ $turbo_res -eq 0 ]]; then
+            conversion_done=true
+        elif [[ $turbo_res -eq 130 ]] || [[ "$ABORT_REQUESTED" == true ]]; then
+            return 130
+        else
+            echo "${RED}Standard Mode Failed.${RESET}"
+
+            local fail_reason=$(cat "$cmd_log.status" 2>/dev/null)
+            rm -f "$cmd_log.status"
+
+            if [[ "$fail_reason" == "CRITICAL" ]]; then
+                 echo -e "${RED}CRITICAL ERROR: Disk Full or Permission Denied.${RESET}"
+                 cleanup_and_exit 1; exit 1
+            elif [[ "$fail_reason" == "STREAM_ERROR" ]]; then
+                 echo -e "${YELLOW}Reason: Stream/Timestamp Error (Likely Seamless Branching).${RESET}"
+            fi
+
+            if [[ "$BATCH_RUNNING" == true ]]; then
+                echo -e "${YELLOW}Batch Mode: Skipping file. Retry manually with -safe.${RESET}"
+                return 1
+            else
+                echo -e "${YELLOW}Suggestion: This file may require Safe Mode (Disk Extraction).${RESET}"
+                printf "Retry with Safe Mode? (Y/n) "
+                read -r REPLY
+                if [[ "$REPLY" =~ ^[Nn]$ ]]; then cleanup_and_exit 1; return 1; fi
+
+                echo -n "[Retry] "
+                if ! convert_legacy "$file" "$conv_hevc"; then
+                    if [[ "$ABORT_REQUESTED" == true ]]; then return 130; fi
+                    echo "${RED}Safe Mode also failed.${RESET}"; cleanup_and_exit 1; return 1
+                fi
+                conversion_done=true
+            fi
+        fi
     fi
 
-    # --- Step 1: Extraction ---
-    # Extract the video track to a raw HEVC stream.
-    echo -n "[1/4] Extracting track $VIDEO_TRACK_ID... "
-    run_logged mkvextract "$file" tracks "$VIDEO_TRACK_ID:$raw_hevc"
-    if [[ $? -ne 0 ]] || [[ ! -s "$raw_hevc" ]]; then
-        echo "${RED}Failed.${RESET}"; echo -e "${YELLOW}Original file retained.${RESET}"
-        cleanup_and_exit 1; return 1
-    fi
-    [[ "$VERBOSE_MODE" == false ]] && echo -e "${GREEN}Done.${RESET}"
+    if [[ "$conversion_done" == false ]]; then return 1; fi
 
-    # --- Step 2: Conversion ---
-    # Mode 2: Converts RPU to Profile 8.1 and discards the Enhancement Layer (EL).
-    echo -n "[2/4] Converting to Profile 8.1... "
-    run_logged dovi_tool -m 2 convert --discard "$raw_hevc" -o "$conv_hevc"
-
-    if [[ $? -ne 0 ]] || [[ ! -s "$conv_hevc" ]]; then
-        echo "${RED}Failed.${RESET}"; echo -e "${YELLOW}Original file retained.${RESET}"
-        cleanup_and_exit 1; return 1
-    fi
-    [[ "$VERBOSE_MODE" == false ]] && echo -e "${GREEN}Done.${RESET}"
-
-    # --- Step 3: Muxing ---
-    # Create the new MKV. We must explicitly set --default-duration to match source FPS.
-    # We also clone track names, languages, and delay properties.
-    echo -n "[3/4] Muxing (Cloning Metadata + ${fps_orig}fps)... "
+    # Step 3: Muxing
     local mux_args=("-o" "$temp_mkv")
     if [[ "$VIDEO_DELAY" != "0" ]]; then mux_args+=("--sync" "0:$VIDEO_DELAY"); fi
     mux_args+=("--default-duration" "0:${fps_orig}fps" "--language" "0:$VIDEO_LANG")
     if [[ -n "$VIDEO_NAME" ]]; then mux_args+=("--track-name" "0:$VIDEO_NAME"); fi
     mux_args+=("$conv_hevc" "--no-video" "$file")
 
+    start_spinner "[2/3] Muxing (Cloning Metadata + ${fps_orig}fps)... "
     run_logged mkvmerge "${mux_args[@]}"
-    if [[ $? -ne 0 ]]; then
-        echo "${RED}Failed.${RESET}"; echo -e "${YELLOW}Original file retained.${RESET}"
-        cleanup_and_exit 1; return 1
-    fi
-    [[ "$VERBOSE_MODE" == false ]] && echo -e "${GREEN}Done.${RESET}"
+    local mux_res=$?
+    stop_spinner
 
-    # --- Step 4: Verification ---
-    # Compare frame counts. Small duration mismatches (<2s) are tolerated if frames match.
-    echo -n "[4/4] Verifying... "
+    if [[ $mux_res -eq 130 ]] || [[ "$ABORT_REQUESTED" == true ]]; then return 130; fi
+    if [[ $mux_res -ne 0 ]]; then
+        echo "${RED}Mux Failed.${RESET}"; cleanup_and_exit 1; return 1
+    fi
+    printf "\r\e[K[2/3] Muxing (Cloning Metadata + ${fps_orig}fps)... Done.\n"
+
+    # Step 4: Verification
+    start_spinner "[3/3] Verifying... "
     local frames_orig=$(mediainfo --Output="Video;%FrameCount%" "$file")
     local frames_new=$(mediainfo --Output="Video;%FrameCount%" "$temp_mkv")
-    local dur_orig=$(mediainfo --Output="General;%Duration%" "$file")
-    local dur_new=$(mediainfo --Output="General;%Duration%" "$temp_mkv")
-    local diff_dur=$(( dur_orig - dur_new )); diff_dur=${diff_dur#-}
+    stop_spinner
 
-    if [[ $diff_dur -gt 2000 ]]; then
-        if [[ "$frames_orig" == "$frames_new" ]] && [[ -n "$frames_orig" ]]; then
-             echo -e "${YELLOW}Duration mismatch but FRAMES MATCH. Safe.${RESET}"
-        else
-             echo -e "${RED}FAIL: Frame/Duration mismatch!${RESET}"
-             echo -e "Original: $frames_orig | New: $frames_new"
-             echo -e "${YELLOW}Original file retained.${RESET}"
-             cleanup_and_exit 1; return 1
-        fi
+    if [[ -n "$frames_orig" ]] && [[ "$frames_orig" != "$frames_new" ]]; then
+          printf "\r\e[K[3/3] Verifying... ${RED}FAIL: Frame mismatch!${RESET} ($frames_orig vs $frames_new)\n"
+          cleanup_and_exit 1; return 1
     fi
+    printf "\r\e[K[3/3] Verifying... ${GREEN}Success!${RESET}\n"
 
-    # --- Step 5: Atomic Swap ---
-    # Rename Original -> .bak.dovi_convert
-    # Rename New -> Original
+    # Print Metrics
+    print_metrics "$temp_mkv" "$frames_new"
+
+    # Step 5: Atomic Swap
     mv "$file" "$backup_mkv"
     mv "$temp_mkv" "$file"
-    echo -e "${GREEN}Success!${RESET}"
 
-    # Handle Auto-Deletion (-delete flag)
     if [[ "$DELETE_BACKUP" == true ]]; then
         rm "$backup_mkv"
         echo -e "${YELLOW}Original Source deleted (-delete active).${RESET}"
@@ -358,47 +583,57 @@ cmd_convert() {
         echo -e "Original Source saved as: ${CYAN}${backup_mkv}${RESET}"
     fi
 
-    rm -f "$raw_hevc" "$conv_hevc"
+    rm -f "$conv_hevc"
     return 0
 }
 
 # --- Cleanup Logic (Smart Disk Sweep) ---
 cmd_cleanup() {
-    echo -e "${BOLD}Scanning for .bak.dovi_convert files...${RESET}"
+    local recursive="$1"
+    local find_cmd=(find .)
+
+    if [[ "$recursive" == "true" ]]; then
+        echo -e "${BOLD}Scanning for .bak.dovi_convert files (Recursive)...${RESET}"
+    else
+        echo -e "${BOLD}Scanning for .bak.dovi_convert files (Current Directory)...${RESET}"
+        find_cmd+=(-maxdepth 1)
+    fi
+
+    find_cmd+=(-name "*.mkv.bak.dovi_convert" -print0)
+
     local files=()
     local total_size=0
-
-    # 1. Find all files ending in our specific backup extension
     while IFS= read -r -d '' f; do
-
-        # 2. PARENT CHECK: Identify the main file
-        #    "${f%.bak.dovi_convert}" removes the suffix to find the parent
         local parent_file="${f%.bak.dovi_convert}"
-
         if [[ -f "$parent_file" ]]; then
-            # Parent exists, so this backup is safe to offer for deletion
             files+=("$f")
-            local size=$(stat -f%z "$f" 2>/dev/null || stat -c%s "$f") # BSD/GNU stat compat
+            local size=$(get_file_size "$f")
             total_size=$((total_size + size))
         else
-            # Parent missing - Treat as Orphan and Skip
-            echo -e "${YELLOW}Skipping Orphan Backup (Parent Missing):${RESET} $(basename "$f")"
+            echo -e "${YELLOW}Skipping Orphan Backup:${RESET} $(basename "$f")"
         fi
-    done < <(find . -name "*.mkv.bak.dovi_convert" -print0)
+    done < <("${find_cmd[@]}")
 
     if [[ ${#files[@]} -eq 0 ]]; then echo "No valid backup files found."; return 0; fi
 
+    echo -e "\n${BOLD}Files found:${RESET}"
+    for f in "${files[@]}"; do
+        echo " - $f"
+    done
+
     local size_gb=$(human_size_gb $total_size)
-    echo -e "Found ${BOLD}${#files[@]} valid backups${RESET} utilizing ${BOLD}${size_gb}${RESET}."
-    echo ""
-    echo -e "${RED}WARNING: These are your ORIGINAL SOURCE FILES.${RESET}"
-    echo "Deletion is permanent and cannot be undone."
-    echo ""
-    printf "Are you sure you want to delete them? (y/N) "
-    read -r REPLY
+    echo -e "\nFound ${BOLD}${#files[@]} valid backups${RESET} utilizing ${BOLD}${size_gb}${RESET}."
+
+    if [[ "$AUTO_YES" == true ]]; then
+        echo -e "${YELLOW}Auto-Yes (-y) active. Deleting files...${RESET}"
+        REPLY="y"
+    else
+        printf "Delete them? (y/N) "
+        read -r REPLY
+    fi
+
     if [[ "$REPLY" =~ ^[Yy]$ ]]; then
         for f in "${files[@]}"; do rm "$f"; echo "Deleted: $(basename "$f")"; done
-        echo -e "${GREEN}Cleanup complete. Reclaimed $size_gb.${RESET}"
     else
         echo "Cancelled."
     fi
@@ -408,60 +643,108 @@ cmd_cleanup() {
 cmd_batch() {
     local max_depth="${1:-1}"
     BATCH_RUNNING=true
-    local conversion_queue=(); local processed_count=0; local skipped_count=0; local success_list=(); local fail_list=()
+    local conversion_queue=(); local success_list=(); local fail_list=()
+    local ignored_count=0; local skipped_count=0
+    local total_batch_size=0
 
     echo -e "${BOLD}Scanning for Profile 7 files (Depth: $max_depth)...${RESET}"
     while IFS= read -r -d '' file; do
         analyze_file "$file"
-        if [[ "$ACTION" == "CONVERT" ]]; then conversion_queue+=("$file"); else ((skipped_count++)); fi
+        if [[ "$ACTION" == "CONVERT" ]]; then
+            conversion_queue+=("$file")
+            local f_size=$(get_file_size "$file")
+            total_batch_size=$((total_batch_size + f_size))
+        elif [[ "$ACTION" == "IGNORE" ]]; then
+            ((ignored_count++))
+        else
+            # SKIP (Invalid/No Track/etc)
+            ((skipped_count++))
+        fi
     done < <(find . -maxdepth "$max_depth" -name "*.mkv" -print0 | sort -z)
 
-    if [[ ${#conversion_queue[@]} -eq 0 ]]; then echo "No Profile 7 files found (Skipped: $skipped_count)."; return 0; fi
+    if [[ ${#conversion_queue[@]} -eq 0 ]]; then echo "No Profile 7 files found."; return 0; fi
 
-    echo -e "\n${BOLD}Files to be converted (${#conversion_queue[@]}):${RESET}"
-    for f in "${conversion_queue[@]}"; do echo " - $(basename "$f")"; done
-    echo "---------------------------------------------------"
-    echo -e "Starting in 3 seconds... (Ctrl+C to cancel)"; sleep 3; echo ""
+    # --- Interactive Overview ---
+    local queue_count=${#conversion_queue[@]}
+    local total_size_gb=$(human_size_gb $total_batch_size)
 
-    # Process Loop
+    echo -e "\n${BOLD}Batch Overview:${RESET}"
+    echo -e "  Files found:    ${GREEN}$queue_count${RESET}"
+    echo -e "  Total Size:     ${CYAN}$total_size_gb${RESET}"
+
+    if [[ "$AUTO_YES" == true ]]; then
+        echo -e "${YELLOW}Auto-Yes (-y) active. Starting conversion immediately...${RESET}"
+        sleep 2
+    else
+        printf "\nShow file list? (y/N) "
+        read -r REPLY
+        if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+            echo -e "\n${BOLD}Conversion Queue:${RESET}"
+            for f in "${conversion_queue[@]}"; do echo " - $f"; done
+        fi
+
+        printf "\nProceed with conversion? (Y/n) "
+        read -r REPLY
+        if [[ "$REPLY" =~ ^[Nn]$ ]]; then
+            echo "Batch cancelled."
+            return 0
+        fi
+    fi
+
+    # --- Conversion Loop ---
+    echo -e "\n${BOLD}Starting Batch Processing...${RESET}"
+    sleep 1
+
     for file in "${conversion_queue[@]}"; do
+        if [[ "$ABORT_REQUESTED" == true ]]; then break; fi
+
         echo "---------------------------------------------------"
         cmd_convert "$file" "auto"
-        if [[ $? -eq 0 ]]; then success_list+=("$(basename "$file")"); else fail_list+=("$(basename "$file")"); fi
+        local res=$?
+
+        if [[ $res -eq 130 ]] || [[ "$ABORT_REQUESTED" == true ]]; then
+            break # Soft Stop requested by User
+        elif [[ $res -eq 0 ]]; then
+            success_list+=("$(basename "$file")")
+        else
+            fail_list+=("$(basename "$file")")
+        fi
     done
     BATCH_RUNNING=false
 
-    # Summary Report
     echo -e "\n==================================================="
-    echo -e "              ${BOLD}BATCH SUMMARY${RESET}"
+    if [[ "$ABORT_REQUESTED" == true ]]; then
+        echo -e "           ${YELLOW}${BOLD}BATCH ABORTED BY USER${RESET}"
+    else
+        echo -e "               ${BOLD}BATCH SUMMARY${RESET}"
+    fi
     echo "==================================================="
-    echo -e "Skipped:    ${CYAN}$skipped_count${RESET}"
-    echo -e "Processed:  ${#conversion_queue[@]}"
-    echo -e "Successful: ${GREEN}${#success_list[@]}${RESET}"
-    echo -e "Failed:     ${RED}${#fail_list[@]}${RESET}"
+    echo "Processed:"
+    echo -e "  - Converted:   ${GREEN}${#success_list[@]}${RESET}"
+    echo -e "  - Failed:      ${RED}${#fail_list[@]}${RESET}"
+    echo ""
+    echo "Not Processed:"
+    echo -e "  - Ignored:     ${CYAN}$ignored_count${RESET}   (Not Profile 7)"
+    echo -e "  - Skipped:     ${YELLOW}$skipped_count${RESET}   (Invalid/Corrupt)"
+
     if [[ ${#fail_list[@]} -gt 0 ]]; then
         echo "---------------------------------------------------"
-        echo -e "${RED}Failed Files:${RESET}"; for f in "${fail_list[@]}"; do echo " - $f"; done
-    fi
-    echo "---------------------------------------------------"
-    if [[ "$DELETE_BACKUP" == false ]]; then
-        echo -e "Backups: ${CYAN}*.bak.dovi_convert${RESET} (Run 'dovi_convert -cleanup' to remove Originals)"
-    else
-        echo -e "Backups: ${YELLOW}Originals deleted automatically.${RESET}"
+        echo -e "${YELLOW}Failed Files (Likely Seamless Branching / Stream Issues):${RESET}"
+        for f in "${fail_list[@]}"; do echo " - $f"; done
+        echo ""
+        echo -e "${BOLD}Suggestion:${RESET} Try converting these specific files using Safe Mode:"
+        echo -e "  dovi_convert -convert \"filename.mkv\" -safe"
     fi
     echo "==================================================="
-    send_notification "dovi_convert" "Batch Complete. ${#success_list[@]} Success, ${#fail_list[@]} Failed."
+    send_notification "dovi_convert" "Batch Complete."
 }
 
 # --- Reporting Commands ---
-
 cmd_check_single() {
     local file="$1"; analyze_file "$file"; local delay_ms=$(echo "scale=0; $VIDEO_DELAY/1000000" | bc)
     echo "---------------------------------------------------"
     echo -e "${BOLD}File:${RESET}   $(basename "$file")"
     echo -e "${BOLD}Status:${RESET} $DOVI_STATUS"
-    echo -e "${BOLD}Track:${RESET}  ID $VIDEO_TRACK_ID | Lang: $VIDEO_LANG"
-    echo -e "${BOLD}Delay:${RESET}  ${delay_ms}ms"
     echo -e "${BOLD}Action:${RESET} $ACTION"
     echo "---------------------------------------------------"
 }
@@ -478,36 +761,50 @@ cmd_check_all() {
 }
 
 # --- Main Argument Parser ---
-# 1. First Pass: Extract options (-v, -delete, -help) regardless of position.
 POSITIONAL_ARGS=()
 while [[ $# -gt 0 ]]; do
   case $1 in
-    -v)
-      VERBOSE_MODE=true
-      shift ;;
-    -delete)
-      DELETE_BACKUP=true
-      shift ;;
+    -debug) DEBUG_MODE=true; shift ;;
+    -delete) DELETE_BACKUP=true; shift ;;
+    -safe) SAFE_MODE=true; shift ;;
+    -y) AUTO_YES=true; shift ;;
     -help|--help|-h)
-      print_help
-      exit 0 ;;
-    *)
-      POSITIONAL_ARGS+=("$1")
-      shift ;;
+        if command -v less &> /dev/null && [ -t 1 ]; then
+            print_help | less -R
+        else
+            print_help
+        fi
+        exit 0 ;;
+    *) POSITIONAL_ARGS+=("$1"); shift ;;
   esac
 done
-set -- "${POSITIONAL_ARGS[@]}" # Restore positional parameters
+set -- "${POSITIONAL_ARGS[@]}"
 
-# 2. Second Pass: Execute commands
 case "$1" in
     -check)
         if [[ "$2" == "-r" ]]; then cmd_check_all "${3:-3}"
         elif [[ -n "$2" ]]; then cmd_check_single "$2"
         else cmd_check_all 1; fi ;;
     -convert)
-        if [[ -z "$2" ]]; then echo "Usage: dovi_convert -convert [file]"; exit 1; fi
+        if [[ -z "$2" ]]; then echo "Usage: -convert [file]"; exit 1; fi
         cmd_convert "$2" "manual" ;;
     -batch) cmd_batch "${2:-1}" ;;
-    -cleanup) cmd_cleanup ;;
-    *) print_usage ;;
+    -cleanup)
+        if [[ "$2" == "-r" ]]; then
+            cmd_cleanup "true"
+        elif [[ -n "$2" ]]; then
+            echo -e "${RED}Error: Invalid flag '$2' for -cleanup.${RESET}"
+            echo "Supported flags: -r (recursive)"
+            exit 1
+        else
+            cmd_cleanup "false"
+        fi ;;
+    *)
+        if [[ -n "$1" ]]; then
+            echo -e "${RED}Error: Unknown command or invalid argument '$1'.${RESET}"
+            echo "Please check your syntax. Flags like '-r' must follow the command."
+            exit 1
+        fi
+        print_usage
+        ;;
 esac
