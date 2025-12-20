@@ -14,6 +14,13 @@ This conversion ensures compatibility with media players that do not support the
 *   **Seamless Branching Support:** Handles complex playlists (common on Disney/Marvel discs) to prevent audio sync issues.
 *   **Non-Destructive:** Renames original files to `*.bak.dovi_convert` instead of overwriting.
 
+## Compatibility
+
+This script works on:
+*   **macOS** (tested on macOS 12 Monterey and later)
+*   **Linux** (any modern distribution)
+*   **Windows** (via WSL - Windows Subsystem for Linux)
+
 ## Dependencies
 
 *   [ffmpeg](https://ffmpeg.org/download.html)
