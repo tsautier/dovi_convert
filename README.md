@@ -31,7 +31,7 @@ This conversion ensures compatibility with media players that do not support the
 ## Compatibility
 
 This script works on:
-*   **macOS** (tested on macOS 12 Monterey and later)
+*   **macOS** (tested on macOS 26)
 *   **Linux** (any modern distribution)
 *   **Windows** (via WSL - Windows Subsystem for Linux)
 
