@@ -75,7 +75,7 @@ dovi_convert -check "Film.mkv"   # Check specific file
 dovi_convert -convert "Movie.mkv"
 ```
 
-**Safe Mode:** Extracts the video track to disk before converting. Use this if the standard mode fails or results in audio desync (common with seamless branching discs). Note that the script will automatically offer fallback to safe mode if the standard mode fails. But you can use this safe mode switch to force the safe mode.
+**Safe Mode:** Extracts the video track to disk before converting. Use this if the standard mode fails or results in audio desync (common with seamless branching discs). Note that the script will automatically offer fallback to safe mode if the standard mode fails. You can use the `-safe` switch to force safe mode.
 ```bash
 dovi_convert -convert "Movie.mkv" -safe
 ```
