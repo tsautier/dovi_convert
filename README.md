@@ -13,10 +13,10 @@ This conversion ensures compatibility with media players that do not support the
 - [Dependencies](#dependencies)
 - [Installation](#installation)
 - [Usage](#usage)
-    - [1. Single File Conversion](#1-single-file-conversion)
-    - [2. Batch Processing](#2-batch-processing)
-    - [3. Cleanup](#3-cleanup)
-    - [4. Analysis](#4-analysis)
+    - [1. Analysis](#1-analysis)
+    - [2. Single File Conversion](#2-single-file-conversion)
+    - [3. Batch Processing](#3-batch-processing)
+    - [4. Cleanup](#4-cleanup)
 - [Troubleshooting](#troubleshooting)
 - [Caveats and Notes](#caveats-and-notes)
 
@@ -62,7 +62,14 @@ sudo ln -s "$(pwd)/dovi_convert.sh" /usr/local/bin/dovi_convert
 
 ## Usage
 
-### 1. Single File Conversion
+### 1. Analysis
+Check the Dolby Vision profile of files.
+```bash
+dovi_convert -check              # Check all files in current directory
+dovi_convert -check "Film.mkv"   # Check specific file
+```
+
+### 2. Single File Conversion
 ```bash
 dovi_convert -convert "Movie.mkv"
 ```
@@ -73,7 +80,7 @@ dovi_convert -convert "Movie.mkv" -safe
 ```
 **Safe Mode:** Extracts the video track to disk before converting. Use this if the standard mode fails or results in audio desync (common with seamless branching discs).
 
-### 2. Batch Processing
+### 3. Batch Processing
 Scans for Profile 7 files and converts them.
 ```bash
 dovi_convert -batch           # Scan current directory only
@@ -81,20 +88,13 @@ dovi_convert -batch 2         # Scan 2 folders deep
 dovi_convert -batch -y        # Run without confirmation prompts
 ```
 
-### 3. Cleanup
+### 4. Cleanup
 Deletes the `.bak.dovi_convert` backup files created during conversion.
 ```bash
 dovi_convert -cleanup         # Clean current dir only
 dovi_convert -cleanup -r      # Clean recursively
 ```
 **Safety Note:** The script checks if the "Parent" MKV exists. If the main movie file is missing, the backup is treated as an "Orphan" and will **not** be deleted.
-
-### 4. Analysis
-Check the Dolby Vision profile of files.
-```bash
-dovi_convert -check              # Check all files in current directory
-dovi_convert -check "Film.mkv"   # Check specific file
-```
 ## Troubleshooting
 
 If a conversion fails:
