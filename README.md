@@ -2,7 +2,7 @@
 
 A Bash script to automate the conversion of Dolby Vision Profile 7 MKV files (UHD Blu-ray rips) into Profile 8.1.
 
-This conversion ensures compatibility with media players that do not support the Profile 7 Enhancement Layer (EL), such as the Apple TV 4K (with Plex or Infuse), Nvidia Shield, Zidoo, and other devices, preventing fallback to standard HDR10 and other issues. The result is a highly compatible file that can be played on a wide range of devices.
+This conversion ensures compatibility with media players that do not support the Profile 7 Enhancement Layer (EL), such as the Apple TV 4K (with Plex or Infuse), Nvidia Shield (to a certain extent), Zidoo, and other devices, preventing fallback to standard HDR10 and other issues. The result is a highly compatible file that can be played on a wide range of devices.
 
 
 
@@ -129,3 +129,9 @@ If you are using the **Plex app on Apple TV 4K**, you will likely encounter a "F
 - **Plex vs. Infuse:** Unlike Plex, the **Infuse** app uses a custom player engine. Infuse is able to correctly leverage the tvOS 17+ native APIs (and its own internal processing) to ensure that the dynamic RPU metadata is actually applied to the video, resulting in a "True" Dolby Vision experience.
 - **Current Status:** Users have reported this behavior for years on the Plex forums. While Plex has occasionally updated their player, they have not yet achieved the same level of Profile 8.1 accuracy as Infuse for local media files (especially MKVs).
 - **Recommendation:** If your primary playback device is an Apple TV 4K, **Infuse** is currently the only reliable way to ensure Dolby Vision files are played with active, true dynamic metadata. Infuse integrates with your Plex server. Be aware that it is a paid app. The free version does not support Dolby Vision.
+
+### 4. A Note on Nvidia Shield
+
+The Nvidia Shield is technically capable of handling Profile 7 FEL files on its own by stripping the Enhancement Layer (EL) and injecting the RPU (dynamic metadata) into the video in real-time (essentially what the dovi_convert script does).
+
+However, the Shield can struggle with this process, especially with high-bitrate content. This often results in stuttering or skipped frames. For Shield users, this script is a useful tool to perform this conversion offline, pre-stripping the EL and injecting the RPU to ensure smooth and reliable playback for problematic high-bitrate files.
