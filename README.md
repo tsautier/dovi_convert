@@ -122,7 +122,7 @@ This script discards the Enhancement Layer while retaining the RPU (dynamic meta
 
 ### 3. Apple TV and Plex Caveat
 
-If you are using the **Plex app on Apple TV 4K**, you will likely encounter a "Fake Dolby Vision" issue, regardless of which version of tvOS you use.
+If you are using the **Plex app on Apple TV 4K**, you will likely encounter a "Fake Dolby Vision" issue, regardless of which version of tvOS you use, and regardless of which Dolby Vision profile the file uses.
 
 - **The Technical Reality:** While Apple officially added **native Profile 8.1 support in tvOS 17**, the Plex app's implementation (which relies on Apple's **AVPlayer** framework for Dolby Vision) is notoriously inconsistent.
 - **The "Fake DV" Issue:** In most cases, Plex will successfully trigger the "Dolby Vision" logo on your TV, but it fails to actually process and apply the dynamic RPU metadata. This means your TV is effectively playing the HDR10 base layer with a Dolby Vision flag - essentially "HDR10 in a Dolby Vision container."
