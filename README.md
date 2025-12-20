@@ -97,15 +97,12 @@ If a conversion fails:
 The converted file will contain exactly one video track (the main movie). Secondary video streams (such as Picture-in-Picture commentary or Multi-Angle views) will be dropped because the conversion process isolates the main video track. All audio and subtitle tracks are preserved.
 *   **Note:** Your original file (containing all tracks) is preserved as a backup, so no data is lost.
 
-### 2. Not for absolute video purists - It's a compromise
-This is not for purists who want to retain 1:1 picture information of the original.
-The Enhancement Layer (EL) that is removed during the conversion:
-* contains 12 bit color information (that no consumer TV can display)
-* *can* contain brightness adjustments, additional film grain and noise, and fixes for PQ glitches
+### 2. A Note on FEL (Full Enhancement Layer)
 
-**HOWEVER:**
-* Most media players and streaming devices ignore the EL completely, anyways
-* They fall back to standard HDR, or worse, don't play at all or glitch out
-* Often times, the EL contains nothing at all (outside of the 12 bit color information)
-* So you lose nothing compared to the HDR version, but you retain the dynamic Dolby Vison metadata
+This conversion discards the Enhancement Layer while retaining the RPU (dynamic metadata). For **most** content, this works perfectly. However, a small number of films use FEL to **elevate brightness** beyond the base layer (e.g., a 4000-nit master where the HDR10 base layer is a 1000-nit trim pass). For these specific titles, the retained RPU metadata may produce suboptimal tone mapping because it was designed for the combined layers.
+
+**The Reality:**
+- Most consumer media players ignore the EL completely anyway (falling back to standard HDR10).
+- For the vast majority of titles, the conversion improves compatibility with no visible quality loss.
+- For the rare "problematic" titles, consider using a FEL-capable player (like the AM6B+) or simply watching in HDR10 mode.
 
