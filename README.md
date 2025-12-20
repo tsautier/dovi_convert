@@ -6,6 +6,20 @@ This conversion ensures compatibility with media players that do not support the
 
 
 
+## Table of Contents
+
+- [Features](#features)
+- [Compatibility](#compatibility)
+- [Dependencies](#dependencies)
+- [Installation](#installation)
+- [Usage](#usage)
+    - [1. Single File Conversion](#1-single-file-conversion)
+    - [2. Batch Processing](#2-batch-processing)
+    - [3. Cleanup](#3-cleanup)
+    - [4. Analysis](#4-analysis)
+- [Troubleshooting](#troubleshooting)
+- [Caveats and Notes](#caveats-and-notes)
+
 ## Features
 
 *   **Simple Command Line Interface:** Easy to use if you are comfortable using the terminal.
