@@ -13,7 +13,7 @@ This conversion ensures compatibility with media players that do not support the
 - [Dependencies](#dependencies)
 - [Installation](#installation)
 - [Usage](#usage)
-    - [1. Analysis](#1-analysis)
+    - [1. File Analysis](#1-file-analysis)
     - [2. Single File Conversion](#2-single-file-conversion)
     - [3. Batch Processing](#3-batch-processing)
     - [4. Cleanup](#4-cleanup)
