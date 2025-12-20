@@ -62,7 +62,7 @@ sudo ln -s "$(pwd)/dovi_convert.sh" /usr/local/bin/dovi_convert
 
 ## Usage
 
-### 1. Analysis
+### 1. File Analysis
 Check the Dolby Vision profile of files.
 ```bash
 dovi_convert -check              # Check all files in current directory
