@@ -99,7 +99,7 @@ The converted file will contain exactly one video track (the main movie). Second
 
 ### 2. A Note on FEL (Full Enhancement Layer)
 
-This conversion discards the Enhancement Layer while retaining the RPU (dynamic metadata). For **most** content, this works perfectly. However, a small number of films use FEL to **elevate brightness** beyond the base layer (e.g., a 4000-nit master where the HDR10 base layer is a 1000-nit trim pass). For these specific titles, the retained RPU metadata may produce suboptimal tone mapping because it was designed for the combined layers.
+This script discards the Enhancement Layer while retaining the RPU (dynamic metadata). For **most** content, this works perfectly. However, a small number of films use FEL to **elevate brightness** beyond the base layer (e.g., a 4000-nit master where the HDR10 base layer is a 1000-nit trim pass). For these specific titles, the retained RPU metadata may produce suboptimal tone mapping because it was designed for the combined layers.
 
 **The Reality:**
 - Most consumer media players ignore the EL completely anyway (falling back to standard HDR10).
