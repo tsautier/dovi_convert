@@ -70,15 +70,15 @@ dovi_convert -check "Film.mkv"   # Check specific file
 ```
 
 ### 2. Single File Conversion
+**Standard Mode (Default):** Uses piping to process the video stream. This is the default and fastest method.
 ```bash
 dovi_convert -convert "Movie.mkv"
 ```
-**Standard Mode:** Uses piping to process the video stream. This is the default and fastest method.
 
+**Safe Mode:** Extracts the video track to disk before converting. Use this if the standard mode fails or results in audio desync (common with seamless branching discs).
 ```bash
 dovi_convert -convert "Movie.mkv" -safe
 ```
-**Safe Mode:** Extracts the video track to disk before converting. Use this if the standard mode fails or results in audio desync (common with seamless branching discs).
 
 ### 3. Batch Processing
 Scans for Profile 7 files and converts them.
