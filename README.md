@@ -4,7 +4,7 @@ A Bash script to automate the conversion of Dolby Vision Profile 7 MKV files (UH
 
 This conversion ensures compatibility with media players that do not support the Profile 7 Enhancement Layer (EL), such as the Apple TV 4K (with Plex or Infuse), Nvidia Shield (to a certain extent), Zidoo, and other devices, preventing fallback to standard HDR10 and other issues. The result is a highly compatible file that can be played on a wide range of devices.
 
-
+Make sure to read important notes in the [Caveats and Notes](#caveats-and-notes) section.
 
 ## Table of Contents
 
