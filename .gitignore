@@ -18,3 +18,4 @@ project\ files/
 
 # Internal Agent Configuration
 .agent/
+.testfiles
