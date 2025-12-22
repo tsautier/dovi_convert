@@ -431,7 +431,13 @@ get_video_details() {
 
     # 1. Get Track ID & Properties
     local mkv_json
-    mkv_json=$(mkvmerge -J "$file")
+    mkv_json=$(mkvmerge -J "$file" 2>/dev/null)
+    local mkv_res=$?
+
+    if [[ $mkv_res -ne 0 ]]; then
+        MI_INFO_STRING="MKVMERGE_FAIL"
+        return
+    fi
     VIDEO_TRACK_ID=$(echo "$mkv_json" | jq -r '.tracks[] | select(.type=="video") | .id' | head -n 1)
 
     if [[ -z "$VIDEO_TRACK_ID" ]]; then
@@ -463,6 +469,10 @@ determine_action() {
 
     if [[ "$MI_INFO_STRING" == "NO_TRACK" ]]; then
         DOVI_STATUS="${RED}No Video Track${RESET}"; ACTION="SKIP"; return
+    fi
+
+    if [[ "$MI_INFO_STRING" == "MKVMERGE_FAIL" ]]; then
+        DOVI_STATUS="${RED}Error: mkvmerge failed (Check Locale/Install)${RESET}"; ACTION="ERROR"; return
     fi
 
     # 3. Decision Matrix
