@@ -10,7 +10,7 @@ This document outlines the planned future development for `dovi_convert`.
 - [ ] **Enhanced Audio Support (Apple TV)**
     - Add option to convert TrueHD Atmos tracks to EAC3 Atmos (using tools like `deezy`).
     - Ensures full spatial audio compatibility on Apple TV and similar devices.
-- [ ] **Smart FEL Detection and Analysis**
+- [x] **Smart FEL Detection and Analysis**
     - Automatically detect films where the Enhancement Layer significantly impacts brightness.
     - Provide clear warnings or "Purist Grade" ratings during file scanning.
     - Helps identify titles where conversion might lead to suboptimal tone mapping.
