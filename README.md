@@ -39,15 +39,16 @@ Extracts the video track to a temporary file on disk before converting. This is 
 
 ### Deep scan file analysis
 
-Automatically analyzes the RPU (Dolby Vision dynamic metadata) of files to detect "Complex FEL".
+Automatically scans MKV files, detects HDR standards (e.g. HDR10, HDR10+, Dolby Vision), and inspects the RPU (Dolby Vision dynamic metadata) of DV Profile 7 files to detect "Complex FEL".
 
 *   **Complex FEL:** Titles where the Full Enhancement Layer (FEL) contains significant brightness information (e.g. a 4000-nit master vs a 1000-nit base layer). Converting these results in incorrect tone mapping. The script **skips** these files by default to prevent quality loss.
 
-### RPU Inspection
+### Dolby Vision Dynamic Metadata (RPU) Inspection
 
 A dedicated `-inspect` command to manually verify brightness expansion (Luminance check) when you want to confirm a "Complex FEL" verdict.
 
-*   **Why use it?** The default deep scan samples the file to detect meaningful data, but it might flag files that are actually safe to convert. `-inspect` digs deeper by extracting and analyzing the entire FEL frame-by-frame. This takes significantly longer but provides a definitive answer on whether brightness expansion is present.
+*   **Why use it?** The default deep scan samples a small part of the file to detect meaningful FEL data, but it might flag files that are actually safe to convert. `-inspect` digs deeper by extracting and analyzing the entire FEL frame-by-frame. This takes significantly longer but provides a definitive answer on whether brightness expansion is present.
+*   Because it is "data-heavy" and slow, batch processing is not available for `-inspect`. This feature is designed to be used for "one-off" inspections of individual files, for cases where you are in doubt about the verdict of the default deep scan.
 
 ## Compatibility
 
