@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-
 # =============================================================================
-# dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v6.4.2)
+# dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v6.5 Beta)
 #
 # DESCRIPTION:
 #   Automates conversion of Dolby Vision Profile 7 MKV files (UHD Blu-ray)
@@ -21,6 +20,12 @@
 #   - BATCH UI: Added file list overview and confirmation steps.
 #   - SAFETY: Strict argument validation and safe Auto-Yes (-y) scoping.
 #   - DOCS: Added caveats for multi-track files.
+#
+# NEW IN v6.5 Beta:
+#   - DEEP SCAN: Smart analysis to detect High-Impact FEL (Active Reconstruction).
+#   - SAFETY: Defaults to Skipping/Warning on Complex FELs to prevent data loss.
+#   - FLEXIBLE CLI: Flags (-force, -quick) can be used in any order.
+#   - FORCE MODE: Override safety checks with -force.
 # =============================================================================
 
 # --- Configuration & Constants ---
@@ -62,6 +67,103 @@ send_notification() {
     if [[ "$OSTYPE" == "darwin"* ]]; then
         osascript -e "display notification \"$message\" with title \"$title\" sound name \"Glass\"" 2>/dev/null
     fi
+}
+
+print_log() {
+    local msg="$1"
+    echo -e "$msg"
+    if [ "$DEBUG_MODE" = true ]; then
+        echo -e "[$(date '+%Y-%m-%d %H:%M:%S')] $msg" | sed 's/\x1b\[[0-9;]*m//g' >> "dovi_convert_debug.log"
+    fi
+}
+
+# ------------------------------------------------------------------------------
+# DEEP SCAN ANALYZER
+# ------------------------------------------------------------------------------
+
+# Analyzes the RPU of a file to detect "Active Reconstruction" (Complex FEL).
+# Sets globals: FEL_VERDICT (SAFE|COMPLEX|UNKNOWN) and FEL_REASON
+check_fel_complexity() {
+    local file="$1"
+    FEL_VERDICT="UNKNOWN"
+    FEL_REASON="Analysis failed"
+
+    # print_log "${CYAN}Running Deep Scan on: $(basename "$file")...${RESET}" # Reduced noise as requested
+
+    # Temp file for HEVC snippet
+    local temp_hevc="probe_$(date +%s)_$$.hevc"
+    local temp_rpu="${temp_hevc}.rpu"
+
+    # 1. Extract 1 second of HEVC (reliable method)
+    if [[ "$DEBUG_MODE" == true ]]; then
+        ffmpeg -y -i "$file" -c:v copy -bsf:v hevc_mp4toannexb -f hevc -t 1 "$temp_hevc" >> dovi_convert_debug.log 2>&1
+    else
+        ffmpeg -v error -y -i "$file" -c:v copy -bsf:v hevc_mp4toannexb -f hevc -t 1 "$temp_hevc" 2>/dev/null
+    fi
+    
+    if [ ! -s "$temp_hevc" ]; then
+         FEL_REASON="Probe extraction failed (ffmpeg error)"
+         rm -f "$temp_hevc"
+         return 1
+    fi
+
+    # 2. Extract RPU from HEVC (Detaches RPU from potentially messy slice structure)
+    if [[ "$DEBUG_MODE" == true ]]; then
+        dovi_tool extract-rpu "$temp_hevc" -o "$temp_rpu" >> dovi_convert_debug.log 2>&1
+    else
+         dovi_tool extract-rpu "$temp_hevc" -o "$temp_rpu" >/dev/null 2>&1
+    fi
+    
+    rm -f "$temp_hevc" # Done with HEVC
+
+    if [ ! -s "$temp_rpu" ]; then
+         FEL_REASON="RPU extraction failed (No RPU found or dovi_tool error)"
+         rm -f "$temp_rpu"
+         return 1
+    fi
+
+    # 3. Analyze the clean RPU file
+    local json_output
+    # Note: dovi_tool prints "Parsing RPU file..." to stdout, corrupting JSON.
+    # We use sed to strip everything before the first '{' character.
+    if [[ "$DEBUG_MODE" == true ]]; then
+         # In debug mode, we define json_output carefully to avoid capturing random debug text, 
+         # but we want to log the raw attempt. 
+         # We will run it twice? No, inefficient.
+         # Just capture stderr to log.
+         json_output=$(dovi_tool info -f 0 -i "$temp_rpu" 2>> dovi_convert_debug.log | sed -n '/^{/,$p')
+    else
+         json_output=$(dovi_tool info -f 0 -i "$temp_rpu" 2>/dev/null | sed -n '/^{/,$p')
+    fi
+    
+    rm -f "$temp_rpu" # Done with RPU
+
+    if [ -z "$json_output" ] || [ "$json_output" == "{" ]; then
+        FEL_REASON="Could not parse RPU (dovi_tool info error or empty)"
+        if [[ "$DEBUG_MODE" == true ]]; then echo "[Deep Scan Error] JSON Empty. Output: $json_output" >> dovi_convert_debug.log; fi
+        return 1
+    fi
+
+    # Check for MMR (Multi-Variate Multiple Regression)
+    # Using jq for robust JSON parsing
+    if echo "$json_output" | jq -e '.rpu_data_mapping.curves[] | select(.mapping_idc == "MMR")' >/dev/null 2>&1; then
+        FEL_VERDICT="COMPLEX"
+        FEL_REASON="Active Reconstruction (MMR Mapping Detected)"
+        return 0
+    fi
+
+    # Check for Active NLQ Offsets (Non-Zero)
+    # If the offset array is anything other than [0,0,0], it's active reconstruction.
+    if echo "$json_output" | jq -e '.rpu_data_mapping.nlq.nlq_offset | select(. != [0,0,0])' >/dev/null 2>&1; then
+        FEL_VERDICT="COMPLEX"
+        FEL_REASON="Active Reconstruction (Non-Zero NLQ Offsets)"
+        return 0
+    fi
+
+    # If we got here: Polynomial(0) and NLQ=[0,0,0] (or NLQ missing)
+    FEL_VERDICT="SAFE"
+    FEL_REASON="Static / Simple FEL (Safe to Convert)"
+    return 0
 }
 
 # --- UI: Robust Spinner (Cursor Hiding + Line Clearing) ---
@@ -157,9 +259,9 @@ print_metrics() {
 
 # Concise usage guide
 print_usage() {
-    echo -e "${BOLD}dovi_convert v6.4.2${RESET}"
+    echo -e "${BOLD}dovi_convert v6.5 Beta${RESET}"
     echo "Usage:"
-    echo "  dovi_convert -check [file]          : Analyze file profile."
+    echo "  dovi_convert -check [file]          : Analyze file profile (Deep Scan by default)."
     echo "  dovi_convert -convert [file]        : Convert (Default: Standard Pipe)."
     echo "  dovi_convert -convert [file] -safe  : Convert using Safe Mode (Disk Extraction)."
     echo "  dovi_convert -batch [depth] [-y]    : Batch convert folder (-y to auto-confirm)."
@@ -167,6 +269,8 @@ print_usage() {
     echo "  dovi_convert -help                  : Show detailed manual."
     echo ""
     echo "Options:"
+    echo "  -force  : Override 'Complex FEL' warnings and force conversion."
+    echo "  -quick  : Skip 'Deep Scan' analysis (Legacy fast check)."
     echo "  -safe   : Force extraction to disk (Robust for Seamless Branching rips)."
     echo "  -delete : Auto-delete backups on success."
     echo "  -debug  : Generate dovi_convert_debug.log (Preserved on exit)."
@@ -193,7 +297,14 @@ print_help() {
     echo "     'Seamless Branching' structures (common on Disney/Marvel discs)."
     echo "     The tool will automatically offer this mode if Standard conversion fails."
     echo ""
-    echo -e "${BOLD}BACKUP STRATEGY${RESET}"
+    echo -e "${BOLD}FEL HANDLING (DEEP SCAN)${RESET}"
+    echo "  The tool automatically performs a 'Deep Scan' on all Profile 7 files."
+    echo "  It analyzes the RPU metadata to distinguish between:"
+    echo -e "  1. ${GREEN}Simple FEL / MEL${RESET}: Metadata-only or static. Safe to convert. (Default)"
+    echo -e "  2. ${RED}Complex FEL${RESET}: Contains active 12-bit reconstruction data (MMR or NLQ)."
+    echo "     Converting these files discards brightness data. The tool will SKIP them."
+    echo ""
+    echo -e "${BOLD}AUTOMATIC BACKUPS${RESET}"
     echo "  The tool automatically preserves your original file before any modification."
     echo "  It uses a specific naming convention to distinguish its backups from your own files."
     echo -e "  Backup File: ${CYAN}[filename].mkv.bak.dovi_convert${RESET}"
@@ -212,45 +323,72 @@ print_help() {
     echo ""
     echo -e "  ${BOLD}-check [file]${RESET}"
     echo "       Analyze the Dolby Vision profile of a file."
-    echo -e "       Use ${BOLD}-check -r [depth]${RESET} to scan folders recursively."
+    echo "       If [file] is omitted, scans all MKV files in the current directory."
+    echo "       Perfoms Deep Scan by default."
+    echo ""
+    echo "       Options:"
+    echo -e "         ${BOLD}-quick${RESET}   Perform quick scan without FEL analysis (Cannot detect Complex FEL)."
+    echo -e "         ${BOLD}-r${RESET}       Recursive scan (Default depth: 5 levels. Specify number to increase)."
     echo ""
     echo -e "  ${BOLD}-convert [file]${RESET}"
     echo "       Converts a single file to Profile 8.1."
+    echo "       Skips 'Complex FEL' files to prevent data loss."
     echo "       The original file is NOT deleted; it is renamed to *.mkv.bak.dovi_convert."
+    echo ""
+    echo "       Options:"
+    echo -e "         ${BOLD}-force${RESET}   Override 'Complex FEL' detection."
+    echo -e "         ${BOLD}-safe${RESET}    Force Safe Mode (Disk Extraction fallback)."
+    echo -e "         ${BOLD}-delete${RESET}  Auto-delete backup on success."
     echo ""
     echo -e "  ${BOLD}-batch [depth]${RESET}"
     echo "       Recursively finds and converts all Profile 7 files in the current folder"
     echo "       and subfolders (up to 'depth' levels deep)."
     echo "       Use -y to skip the interactive confirmation steps."
+    echo "       Complex FELs are skipped unless overridden."
+    echo ""
+    echo "       Options:"
+    echo -e "         ${BOLD}-y${RESET}       Skip confirmation prompts."
+    echo -e "         ${BOLD}-force${RESET}   Convert Complex FELs (Apply to all)."
+    echo -e "         ${BOLD}-delete${RESET}  Auto-delete backups."
     echo ""
     echo -e "  ${BOLD}-cleanup${RESET}"
     echo -e "       Scans for and deletes ${CYAN}*.mkv.bak.dovi_convert${RESET} files in the current directory."
-    echo -e "       Use ${BOLD}-cleanup -r${RESET} to scan recursively."
-    echo -e "       Use ${BOLD}-y${RESET} to skip the deletion confirmation."
-    echo -e "       ${BOLD}Smart Safety:${RESET} This command checks if the 'Parent' MKV exists."
-    echo "       If the main movie file is missing, the backup is treated as an 'Orphan'"
-    echo "       and will NOT be deleted, preventing accidental data loss."
+    echo -e "       ${BOLD}Safety Check:${RESET} Checks if 'Parent' MKV exists before deleting orphan backups."
     echo ""
-    echo -e "${BOLD}OPTIONS${RESET}"
+    echo "       Options:"
+    echo -e "         ${BOLD}-r${RESET}       Recursive scan."
+    echo -e "         ${BOLD}-y${RESET}       Skip confirmation prompts."
     echo ""
-    echo -e "  ${BOLD}-safe${RESET}"
+    echo -e "${BOLD}OPTION DETAILS${RESET}"
+    echo ""
+    echo -e "  ${BOLD}-force${RESET} [Convert, Batch]"
+    echo -e "       ${RED}Force Conversion.${RESET}"
+    echo "       Overrides the 'Complex FEL' detection. Use this if you want to convert"
+    echo "       a Complex FEL file despite the potential loss of brightness data."
+    echo ""
+    echo -e "  ${BOLD}-quick${RESET} [Check]"
+    echo -e "       ${YELLOW}Quick Scan Mode.${RESET}"
+    echo "       Skips the 'Deep Scan' (RPU Analysis) for Profile 7 files."
+    echo "       Uses basic MediaInfo checks only. Faster, but cannot detect Complex FEL."
+    echo ""
+    echo -e "  ${BOLD}-safe${RESET}  [Convert, Batch]"
     echo -e "       ${YELLOW}Force Safe Mode (Extraction).${RESET}"
     echo "       Forces extraction of the video track to disk before converting."
     echo "       This is the robust fallback method usually triggered automatically on error,"
     echo "       but you can force it manually here for known problematic files."
     echo ""
-    echo -e "  ${BOLD}-delete${RESET}"
+    echo -e "  ${BOLD}-delete${RESET} [Convert, Batch]"
     echo -e "       ${YELLOW}Auto-Delete Mode.${RESET}"
     echo "       Automatically deletes the backup (Original Source) file immediately"
     echo "       after a successful conversion and verification."
     echo "       Use this for large batches where you don't have disk space to store backups."
     echo ""
-    echo -e "  ${BOLD}-debug${RESET}"
+    echo -e "  ${BOLD}-debug${RESET} [Global]"
     echo -e "       ${YELLOW}Debug Mode.${RESET}"
     echo "       Generates a 'dovi_convert_debug.log' file in the current directory"
     echo "       containing full ffmpeg/dovi_tool output. Essential for troubleshooting."
     echo ""
-    echo -e "  ${BOLD}-y${RESET}"
+    echo -e "  ${BOLD}-y${RESET}     [Batch, Cleanup]"
     echo -e "       ${YELLOW}Auto-Yes Mode.${RESET}"
     echo "       Automatically answers 'Yes' to confirmation prompts (Batch Start / Cleanup)."
     echo "       Does NOT override safety decisions (like Safe Mode fallback)."
@@ -291,6 +429,10 @@ trap 'cleanup_and_exit 130' SIGINT SIGTERM
 # --- Analysis Logic ---
 analyze_file() {
     local file="$1"
+    # Optional mode arg if needed, but we rely on global flags mostly for check/convert context
+    # ideally analyze_file should just set status, and the caller decides to print or convert.
+    # But current architecture mixes them. Let's adapt.
+    
     VIDEO_TRACK_ID=""; VIDEO_DELAY="0"; VIDEO_LANG=""; VIDEO_NAME="";
     DOVI_STATUS=""; ACTION=""
 
@@ -316,15 +458,50 @@ analyze_file() {
 
     # 3. Decision Matrix
     if [[ "$combined_info" == *"dvhe.07"* ]] || [[ "$combined_info" == *"Profile 7"* ]]; then
-        DOVI_STATUS="${RED}Profile 7 (FEL/MEL)${RESET}"; ACTION="CONVERT"
+        # PROFILE 7 DETECTED
+        
+        # Check for Quick Mode
+        if [ "$QUICK_CHECK_MODE" = true ]; then
+            DOVI_STATUS="${RED}DV Profile 7 (FEL/MEL)${RESET}"
+            ACTION="CONVERT"
+        else
+            # DEEP SCAN
+            check_fel_complexity "$file"
+            
+            if [ "$FEL_VERDICT" == "COMPLEX" ]; then
+                DOVI_STATUS="${RED}DV Profile 7 FEL (Complex)${RESET}"
+                if [ "$FORCE_MODE" = true ]; then
+                    ACTION="CONVERT (FORCED)"
+                else
+                    ACTION="SKIP (Complex FEL)"
+                fi
+            elif [ "$FEL_VERDICT" == "SAFE" ]; then
+                DOVI_STATUS="${GREEN}DV Profile 7 FEL (Simple)${RESET}"
+                ACTION="CONVERT"
+            else
+                DOVI_STATUS="${YELLOW}DV Profile 7 (Check Failed)${RESET}"
+                ACTION="MANUAL CHECK"
+            fi
+        fi
+
     elif [[ "$combined_info" == *"dvhe.08"* ]] || [[ "$combined_info" == *"Profile 8"* ]]; then
-        DOVI_STATUS="${GREEN}Profile 8.1${RESET}"; ACTION="IGNORE"
+        DOVI_STATUS="${CYAN}DV Profile 8.1${RESET}"; ACTION="IGNORE"
     elif [[ "$combined_info" == *"dvhe.05"* ]] || [[ "$combined_info" == *"Profile 5"* ]]; then
-        DOVI_STATUS="${YELLOW}Profile 5 (Stream)${RESET}"; ACTION="IGNORE"
+        DOVI_STATUS="${YELLOW}DV Profile 5 (Stream)${RESET}"; ACTION="IGNORE"
     elif [[ "$combined_info" == *"Dolby Vision"* ]]; then
-        DOVI_STATUS="${RED}Unknown Dolby Profile${RESET}"; ACTION="CONVERT"
+        DOVI_STATUS="${RED}DV Unknown Profile${RESET}"; ACTION="CONVERT"
     else
-        DOVI_STATUS="${CYAN}HDR10 / SDR${RESET}"; ACTION="IGNORE"
+        # Granular Detection
+        if [[ "$combined_info" == *"2094"* ]]; then
+            DOVI_STATUS="${CYAN}HDR10+${RESET}"
+        elif [[ "$combined_info" == *"HLG"* ]] || [[ "$combined_info" == *"Hybrid Log Gamma"* ]]; then
+            DOVI_STATUS="${CYAN}HLG${RESET}"
+        elif [[ "$combined_info" == *"2086"* ]] || [[ "$combined_info" == *"HDR10"* ]]; then
+            DOVI_STATUS="${CYAN}HDR10${RESET}"
+        else
+            DOVI_STATUS="${CYAN}SDR${RESET}"
+        fi
+        ACTION="IGNORE"
     fi
 }
 
@@ -430,23 +607,23 @@ convert_legacy() {
     raw_hevc="$raw_temp"
 
     # Extraction Step
-    start_spinner "[Safe] Extracting... "
+    start_spinner "[1/3] Extracting... "
     run_logged mkvextract "$input" tracks "$VIDEO_TRACK_ID:$raw_temp"
     local res=$?
     stop_spinner
 
-    if [[ $res -eq 0 ]]; then printf "\r\e[K[Safe] Extracting... Done.\n"; fi
+    if [[ $res -eq 0 ]]; then printf "\r\e[K[1/3] Extracting... Done.\n"; fi
 
     if [[ $res -eq 130 ]] || [[ "$ABORT_REQUESTED" == true ]]; then return 130; fi
     if [[ $res -ne 0 ]]; then return 1; fi
 
     # Conversion Step
-    start_spinner "[Safe] Converting... "
+    start_spinner "[1/3] Converting... "
     run_logged dovi_tool -m 2 convert --discard "$raw_temp" -o "$output"
     local status=$?
     stop_spinner
 
-    if [[ $status -eq 0 ]]; then printf "\r\e[K[Safe] Converting... Done.\n"; fi
+    if [[ $status -eq 0 ]]; then printf "\r\e[K[1/3] Converting... Done.\n"; fi
 
     rm -f "$raw_temp"
     if [[ $status -eq 130 ]]; then return 130; fi
@@ -461,12 +638,24 @@ cmd_convert() {
     if [[ ! -f "$file" ]]; then echo "File not found: $file"; return 1; fi
     analyze_file "$file"
 
+    # Safety Check: Complex FEL
+    if [[ "$FEL_VERDICT" == "COMPLEX" ]]; then
+        if [[ "$FORCE_MODE" == true ]]; then
+             echo -e "${RED}Complex FEL detected. Force Mode enabled. Proceeding...${RESET}"
+        else
+             if [[ "$mode" == "auto" ]]; then return 2; fi # Quiet skip for batch
+             echo -e "${RED}Error: Complex FEL detected (not safe to convert. Use -force to override).${RESET}"
+             return 1
+        fi
+    fi
+
+    # Safety Check: Not Profile 7 (IGNORE) or Generic SKIP (e.g. No Video Track)
+    # Note: SKIP (Complex FEL) is already handled above due to FEL_VERDICT check.
+    # We check for generic SKIP (e.g. No Video Track) or IGNORE.
     if [[ "$ACTION" == "IGNORE" || "$ACTION" == "SKIP" ]]; then
         if [[ "$mode" == "auto" ]]; then return 2; fi
-        echo -e "${YELLOW}Notice: Not Profile 7 ($file).${RESET}"
-        printf "Force conversion? (y/N) "
-        read -r REPLY
-        if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then return 0; fi
+        echo -e "${RED}Error: Input file is not a Dolby Vision Profile 7 file.${RESET}"
+        return 1
     fi
 
     echo -e "${BOLD}Processing:${RESET} $file"
@@ -644,38 +833,65 @@ cmd_batch() {
     local max_depth="${1:-1}"
     BATCH_RUNNING=true
     local conversion_queue=(); local success_list=(); local fail_list=()
-    local ignored_count=0; local skipped_count=0
+    local ignored_count=0; local skipped_count=0; local complex_count=0
+    local simple_count=0; local forced_count=0
     local total_batch_size=0
 
     echo -e "${BOLD}Scanning for Profile 7 files (Depth: $max_depth)...${RESET}"
     while IFS= read -r -d '' file; do
         analyze_file "$file"
-        if [[ "$ACTION" == "CONVERT" ]]; then
+        if [[ "$ACTION" == CONVERT* ]]; then
             conversion_queue+=("$file")
+            if [[ "$ACTION" == *"FORCED"* ]]; then
+                ((forced_count++))
+            else
+                ((simple_count++))
+            fi
             local f_size=$(get_file_size "$file")
             total_batch_size=$((total_batch_size + f_size))
         elif [[ "$ACTION" == "IGNORE" ]]; then
             ((ignored_count++))
+        elif [[ "$FEL_VERDICT" == "COMPLEX" ]]; then
+             # Separately track Complex FEL skips
+            ((complex_count++))
         else
             # SKIP (Invalid/No Track/etc)
             ((skipped_count++))
         fi
     done < <(find . -maxdepth "$max_depth" -name "*.mkv" -print0 | sort -z)
 
-    if [[ ${#conversion_queue[@]} -eq 0 ]]; then echo "No Profile 7 files found."; return 0; fi
+    if [[ ${#conversion_queue[@]} -eq 0 && $complex_count -eq 0 ]]; then 
+         echo "No Profile 7 files found (Ignored: $ignored_count)."
+         return 0
+    fi
 
     # --- Interactive Overview ---
     local queue_count=${#conversion_queue[@]}
     local total_size_gb=$(human_size_gb $total_batch_size)
 
     echo -e "\n${BOLD}Batch Overview:${RESET}"
-    echo -e "  Files found:    ${GREEN}$queue_count${RESET}"
-    echo -e "  Total Size:     ${CYAN}$total_size_gb${RESET}"
+    if [[ $simple_count -gt 0 ]]; then
+        echo -e "  Convert:        ${GREEN}$simple_count${RESET}   (Simple FEL / MEL)"
+    fi
+    if [[ $forced_count -gt 0 ]]; then
+        echo -e "  Convert:        ${YELLOW}$forced_count${RESET}   (Complex FEL - Forced)"
+    fi
+    if [[ $complex_count -gt 0 ]]; then
+        echo -e "  Skip:           ${RED}$complex_count${RESET}   (Complex FEL)"
+    fi
+    echo -e "  Queue Size:     ${CYAN}$total_size_gb${RESET}"
 
     if [[ "$AUTO_YES" == true ]]; then
         echo -e "${YELLOW}Auto-Yes (-y) active. Starting conversion immediately...${RESET}"
         sleep 2
     else
+        # If queue is empty but we found skipped Complex FEL, just exit nicely.
+        if [[ $queue_count -eq 0 ]]; then
+             echo -e "\nNo files eligible for conversion."
+             echo -e "Ignored: $ignored_count (Not P7), Complex FEL: $complex_count (Unsafe), Skipped: $skipped_count (Invalid)."
+             return 0
+        fi
+
         printf "\nShow file list? (y/N) "
         read -r REPLY
         if [[ "$REPLY" =~ ^[Yy]$ ]]; then
@@ -691,14 +907,19 @@ cmd_batch() {
         fi
     fi
 
-    # --- Conversion Loop ---
-    echo -e "\n${BOLD}Starting Batch Processing...${RESET}"
-    sleep 1
+    echo ""
+    echo "==================================================="
+    echo "BATCH PROCESSING STARTED"
+    echo "==================================================="
+
+    local current_idx=1
+    local success_simple_count=0; local success_forced_count=0
 
     for file in "${conversion_queue[@]}"; do
         if [[ "$ABORT_REQUESTED" == true ]]; then break; fi
 
         echo "---------------------------------------------------"
+        echo -e "${BOLD}[$current_idx/$queue_count]${RESET} Processing: $(basename "$file")"
         cmd_convert "$file" "auto"
         local res=$?
 
@@ -706,9 +927,18 @@ cmd_batch() {
             break # Soft Stop requested by User
         elif [[ $res -eq 0 ]]; then
             success_list+=("$(basename "$file")")
+            if [[ "$FEL_VERDICT" == "COMPLEX" ]]; then
+                ((success_forced_count++))
+            else
+                ((success_simple_count++))
+            fi
+        elif [[ $res -eq 2 ]]; then
+            # Should not happen since we filtered queue, but if it does (e.g. file vanished)
+            ((skipped_count++))
         else
             fail_list+=("$(basename "$file")")
         fi
+        ((current_idx++))
     done
     BATCH_RUNNING=false
 
@@ -716,16 +946,25 @@ cmd_batch() {
     if [[ "$ABORT_REQUESTED" == true ]]; then
         echo -e "           ${YELLOW}${BOLD}BATCH ABORTED BY USER${RESET}"
     else
-        echo -e "               ${BOLD}BATCH SUMMARY${RESET}"
+        echo -e "           ${BOLD}BATCH PROCESSING COMPLETE${RESET}"
     fi
     echo "==================================================="
     echo "Processed:"
-    echo -e "  - Converted:   ${GREEN}${#success_list[@]}${RESET}"
+    if [[ $success_simple_count -gt 0 ]]; then
+        echo -e "  - Converted:   ${GREEN}$success_simple_count${RESET}   (Simple FEL / MEL)"
+    fi
+    if [[ $success_forced_count -gt 0 ]]; then
+        echo -e "  - Converted:   ${YELLOW}$success_forced_count${RESET}   (Complex FEL - Forced)"
+    fi
+    if [[ ${#success_list[@]} -eq 0 ]]; then
+         echo -e "  - Converted:   0"
+    fi
     echo -e "  - Failed:      ${RED}${#fail_list[@]}${RESET}"
     echo ""
     echo "Not Processed:"
     echo -e "  - Ignored:     ${CYAN}$ignored_count${RESET}   (Not Profile 7)"
-    echo -e "  - Skipped:     ${YELLOW}$skipped_count${RESET}   (Invalid/Corrupt)"
+    echo -e "  - Complex FEL: ${RED}$complex_count${RESET}   (Unsafe / Skipped)"
+    echo -e "  - Invalid:     ${YELLOW}$skipped_count${RESET}   (Corrupt / No Track)"
 
     if [[ ${#fail_list[@]} -gt 0 ]]; then
         echo "---------------------------------------------------"
@@ -751,60 +990,113 @@ cmd_check_single() {
 
 cmd_check_all() {
     local max_depth="${1:-1}"
-    printf "%-50s %-25s %-10s\n" "Filename" "Profile" "Action"
-    echo "----------------------------------------------------------------------------------------"
+    
+    # 1. Build Header Message
+    local scan_type="Deep Scan"
+    if [[ "$QUICK_CHECK_MODE" == true ]]; then scan_type="Quick Scan"; fi
+    
+    local location="in current directory"
+    if [[ "$max_depth" -gt 1 ]]; then location="recursively ($max_depth levels deep)"; fi
+    
+    echo -e "${CYAN}Running $scan_type $location...${RESET}"
+    
+    # 2. Print Table Header
+    printf "%-50s %-27s %s\n" "Filename" "Format" "Action"
+    echo "------------------------------------------------------------------------------------------------"
+    
+    # 3. Iterate
     while IFS= read -r -d '' file; do
         analyze_file "$file"
-        local name="${file#./}"; if [ ${#name} -gt 48 ]; then name="${name:0:45}..."; fi
-        printf "%-50s ${DOVI_STATUS} \t\t $ACTION\n" "$name"
+        local name="${file#./}"; 
+        # Truncate filename (Strict 48 chars + '...')
+        if [ ${#name} -gt 48 ]; then name="${name:0:48}..."; fi
+        printf "%-50s %-36b %b\n" "$name" "${DOVI_STATUS}" "${ACTION}"
     done < <(find . -maxdepth "$max_depth" -name "*.mkv" -print0 | sort -z)
 }
 
-# --- Main Argument Parser ---
-POSITIONAL_ARGS=()
-while [[ $# -gt 0 ]]; do
-  case $1 in
-    -debug) DEBUG_MODE=true; shift ;;
-    -delete) DELETE_BACKUP=true; shift ;;
-    -safe) SAFE_MODE=true; shift ;;
-    -y) AUTO_YES=true; shift ;;
-    -help|--help|-h)
+# ------------------------------------------------------------------------------
+# ARGUMENT PARSER (TWO-PASS)
+# ------------------------------------------------------------------------------
+
+# Pass 1: Global Flag Harvesting
+ARGS=()
+for arg in "$@"; do
+    case "$arg" in
+        -force) FORCE_MODE=true ;;
+        -safe)  SAFE_MODE=true ;;
+        -quick) QUICK_CHECK_MODE=true ;;
+        -y)     AUTO_YES=true ;;
+        -debug) DEBUG_MODE=true ;;
+        -delete) DELETE_BACKUP=true ;;
+        *) ARGS+=("$arg") ;; # Keep non-global args
+    esac
+done
+
+# Reset positional parameters to the remaining args
+set -- "${ARGS[@]}"
+
+# Pre-flight checks
+if ! command -v dovi_tool &> /dev/null; then
+    echo -e "${RED}Error: dovi_tool not found.${RESET}"
+    exit 1
+fi
+
+# Pass 2: Action Dispatch
+if [ $# -eq 0 ]; then
+    print_usage
+    exit 0
+fi
+
+COMMAND="$1"
+shift
+
+case "$COMMAND" in
+    -check)
+        if [[ "$1" == "-r" ]]; then
+            shift
+            # If next arg is a number, use it as depth. Otherwise default to 5.
+            depth="5"
+            if [[ "$1" =~ ^[0-9]+$ ]]; then
+                depth="$1"
+            fi
+            cmd_check_all "$depth"
+        elif [ -z "$1" ]; then 
+            # Check all in current dir if no file
+            cmd_check_all 1
+        else
+            cmd_check_single "$1"
+        fi
+        ;;
+    -convert)
+        # Note: Previous convert logic expected $2 to be file. 
+        # Here we already shifted, so $1 is file.
+        FILE="$1"
+        if [ -z "$FILE" ]; then echo "Usage: -convert [file]"; exit 1; fi
+        cmd_convert "$FILE" "manual"
+        ;;
+    -batch)
+        DEPTH="$1"
+        cmd_batch "${DEPTH:-1}"
+        ;;
+    -cleanup)
+        # Handle optional -r flag if it wasn't stripped? 
+        # Actually -r is specific to cleanup, not global.
+        if [[ "$1" == "-r" ]]; then
+            cmd_cleanup "true"
+        else
+            cmd_cleanup "false"
+        fi
+        ;;
+    -help|--help)
         if command -v less &> /dev/null && [ -t 1 ]; then
             print_help | less -R
         else
             print_help
         fi
-        exit 0 ;;
-    *) POSITIONAL_ARGS+=("$1"); shift ;;
-  esac
-done
-set -- "${POSITIONAL_ARGS[@]}"
-
-case "$1" in
-    -check)
-        if [[ "$2" == "-r" ]]; then cmd_check_all "${3:-3}"
-        elif [[ -n "$2" ]]; then cmd_check_single "$2"
-        else cmd_check_all 1; fi ;;
-    -convert)
-        if [[ -z "$2" ]]; then echo "Usage: -convert [file]"; exit 1; fi
-        cmd_convert "$2" "manual" ;;
-    -batch) cmd_batch "${2:-1}" ;;
-    -cleanup)
-        if [[ "$2" == "-r" ]]; then
-            cmd_cleanup "true"
-        elif [[ -n "$2" ]]; then
-            echo -e "${RED}Error: Invalid flag '$2' for -cleanup.${RESET}"
-            echo "Supported flags: -r (recursive)"
-            exit 1
-        else
-            cmd_cleanup "false"
-        fi ;;
+        ;;
     *)
-        if [[ -n "$1" ]]; then
-            echo -e "${RED}Error: Unknown command or invalid argument '$1'.${RESET}"
-            echo "Please check your syntax. Flags like '-r' must follow the command."
-            exit 1
-        fi
+        print_log "${RED}Unknown command: $COMMAND${RESET}"
         print_usage
+        exit 1
         ;;
 esac

@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.5 Beta] - 2025-12-21
+### Added
+- **Deep Scan FEL Detection**: New  analysis logic that inspects the RPU structure (Active NLQ/MMR) to deterministically identify "Complex" FEL titles (e.g. FEL that elevates luminance and shouldn't be converted to profile 8.1).
+- **`-force` Flag**: Override safety warnings for Complex FEL titles (e.g., `dovi_convert -convert movie.mkv -force`). Works for single file and batch mode.
+- **`-quick` Flag**: Skips the Deep Scan in `-check` mode.
+- **Improved Batch Summary**: Batch mode now tracks "Ignored" (Not Profile 7), "Skipped" (Unsafe), and "Converted" files separately. It also distinguishes between "Simple" and "Forced" conversions in the final report.
+
+### Changed
+- **Default Behavior**: `-check` now performs a Deep Scan on Profile 7 files by default.
+- **Strict Enforcement**: The tool now hard-fails if the input file is not Dolby Vision Profile 7 (removed interactive prompts for non-P7 files).
+- **Safe Mode UI**: Progress numbering aligned to standard workflow (`[1/3] Extracting`, `[1/3] Converting`) for consistency.
+- **Arguments**: Arguments can now be passed in any order. Fixed `-r` argument parsing logic.
+- **Safety**: Conversion now defaults to skipping/warning on Complex FELs to prevent data loss.
+
 ## [6.4.2] - 2025-12-19
 ### Added
 - **Piping Implementation:** Standard conversion now pipes `ffmpeg` output directly to `dovi_tool`. This eliminates temporary disk usage for the video stream and improves processing speed.
