@@ -262,6 +262,7 @@ print_usage() {
     echo -e "${BOLD}dovi_convert v6.5 Beta${RESET}"
     echo "Usage:"
     echo "  dovi_convert -check [file]          : Analyze file profile (Deep Scan by default)."
+    echo "  dovi_convert -inspect [file]        : Inspect full RPU structure of Profile 7 files."
     echo "  dovi_convert -convert [file]        : Convert (Default: Standard Pipe)."
     echo "  dovi_convert -convert [file] -safe  : Convert using Safe Mode (Disk Extraction)."
     echo "  dovi_convert -batch [depth] [-y]    : Batch convert folder (-y to auto-confirm)."
@@ -337,6 +338,11 @@ print_help() {
     echo ""
     echo "       Options:"
     echo -e "         ${BOLD}-force${RESET}   Override 'Complex FEL' detection."
+    echo ""
+    echo -e "  ${BOLD}-inspect [file]${RESET}"
+    echo "       Inspects full RPU structure to verify brightness metadata."
+    echo "       Compares Peak Brightness in RPU vs Base Layer to detect active expansion."
+    echo "       Use this to verify 'Complex FEL' verdicts. (Slow: Reads entire file)."
     echo -e "         ${BOLD}-safe${RESET}    Force Safe Mode (Disk Extraction fallback)."
     echo -e "         ${BOLD}-delete${RESET}  Auto-delete backup on success."
     echo ""
@@ -405,6 +411,9 @@ cleanup_and_exit() {
     if [[ -n "$raw_hevc" && -f "$raw_hevc" ]]; then rm -f "$raw_hevc"; fi
     if [[ -n "$conv_hevc" && -f "$conv_hevc" ]]; then rm -f "$conv_hevc"; fi
     if [[ -n "$temp_mkv" && -f "$temp_mkv" ]]; then rm -f "$temp_mkv"; fi
+    
+    # Analyze/Inspect Temp Files
+    rm -f inspect_*.rpu inspect_*.json probe_*.hevc probe_*.rpu
 
     # Cleanup Log (Conditional)
     if [[ -n "$cmd_log" && -f "$cmd_log" && "$DEBUG_MODE" == false ]]; then
@@ -415,7 +424,9 @@ cleanup_and_exit() {
     if [[ $exit_code -eq 130 ]]; then
         echo -e "\n${YELLOW}[!] Process Interrupted by User.${RESET}"
         echo -e "${YELLOW}[!] Cleaning up incomplete files... Done.${RESET}"
-        echo -e "${GREEN}[✓] Original Source file is safe and untouched.${RESET}"
+        if [[ "$BATCH_RUNNING" == true ]] || [[ -n "$backup_mkv" && -f "$backup_mkv" ]]; then
+             echo -e "${GREEN}[✓] Original Source file is safe and untouched.${RESET}"
+        fi
         ABORT_REQUESTED=true
 
         if [[ "$BATCH_RUNNING" == true ]]; then return 130; else echo "Exiting."; exit 130; fi
@@ -978,6 +989,111 @@ cmd_batch() {
     send_notification "dovi_convert" "Batch Complete."
 }
 
+# ------------------------------------------------------------------------------
+# INSPECT (L1 ANALYSIS)
+# ------------------------------------------------------------------------------
+cmd_inspect() {
+    local file="$1"
+
+    if [ ! -f "$file" ]; then
+        echo -e "${RED}Error: File '$file' not found.${RESET}"
+        exit 1
+    fi
+
+    # 1. Basic Validation
+    # Optimization: processing the full file anyway, so we skip the probe's Deep Scan
+    # by forcing Quick Mode for this check. This gives us the Track ID and Profile
+    # without the redundant 1s extraction delay.
+    local QUICK_CHECK_MODE=true 
+    analyze_file "$file" >/dev/null # populate globals
+    
+    if [[ "$DOVI_STATUS" != *"Profile 7"* ]]; then
+        echo -e "${RED}Error: File is not Dolby Vision Profile 7.${RESET}"
+        echo -e "Detected: $DOVI_STATUS"
+        exit 1
+    fi
+
+    echo ""
+    echo "==================================================="
+    echo -e "${BOLD}FULL RPU STRUCTURE INSPECTION${RESET}"
+    echo "==================================================="
+    echo -e "File:       ${BOLD}$(basename "$file")${RESET}"
+    echo -e "Format:     DV Profile 7 (Scanning...)"
+    echo "---------------------------------------------------"
+
+    local temp_rpu="inspect_$(date +%s)_$$.rpu"
+    
+    # 2. Extract Full RPU
+    # Use ffmpeg to stream video track to dovi_tool extract-rpu via pipe (Fastest Method)
+    # We suppress ffmpeg stderr here to avoid "Broken pipe" messages when user interrupts.
+    start_spinner "Extracting RPU (Full Track)... "
+    (ffmpeg -v error -i "$file" -map 0:$VIDEO_TRACK_ID -c:v copy -bsf:v hevc_mp4toannexb -f hevc - 2>/dev/null \
+    | dovi_tool extract-rpu - -o "$temp_rpu" >/dev/null 2>&1)
+    stop_spinner
+    
+    if [ ! -s "$temp_rpu" ]; then
+        echo -e "${RED}Error: RPU extraction failed (Empty RPU file).${RESET}"
+        rm -f "$temp_rpu"
+        exit 1
+    fi
+    printf "\r\e[KExtracting RPU... Done.\n"
+
+    # 3. Analyze L1 (Summary Mode)
+    # We use 'dovi_tool info -s' to get the calculated MaxCLL from the scan.
+    # This avoids complex JSON parsing and is proven reliable.
+    start_spinner "Analyzing L1 Metadata... "
+    local analysis_output
+    analysis_output=$(dovi_tool info -s -i "$temp_rpu" 2>&1)
+    stop_spinner
+    printf "\r\e[KAnalyzing L1 Metadata... Done.\n"
+
+    rm -f "$temp_rpu"
+
+    # 4. Parse Data
+    local bl_peak
+    # MediaInfo MasteringDisplay_Luminance format: "min: 0.0001 cd/m2, max: 1000 cd/m2"
+    local raw_bl_peak
+    raw_bl_peak=$(mediainfo --Output="Video;%MasteringDisplay_Luminance%" "$file" | grep -o "max: [0-9]*" | grep -o "[0-9]*")
+    bl_peak="${raw_bl_peak:-1000}" # Default to 1000 if extraction fails
+
+    local rpu_peak
+    # Parse "RPU content light level (L1): MaxCLL: 254.98 nits"
+    # We use awk to find the line containing "MaxCLL" and extract the number.
+    local raw_rpu_peak
+    raw_rpu_peak=$(echo "$analysis_output" | grep "RPU content light level (L1)" | grep -o "MaxCLL: [0-9.]*" | grep -o "[0-9.]*")
+    
+    # Round to integer using printf/bash arithmetic
+    if [[ -n "$raw_rpu_peak" ]]; then
+        rpu_peak=$(printf "%.0f" "$raw_rpu_peak")
+    else
+        rpu_peak=0
+    fi
+
+    local diff=$(( rpu_peak - bl_peak ))
+    local verdict=""
+    local advisory=""
+
+    # Tolerance of 50 nits
+    # Tolerance of 50 nits
+    if [ "$diff" -gt 50 ]; then
+        verdict="${RED}COMPLEX FEL (Active Brightness Expansion)${RESET}"
+        advisory="${BOLD}ADVISORY:${RESET}\nBrightness data exists in the Enhancement Layer.\nConversion will result in quality loss and incorrect tone mapping.\n\nUse -force to convert anyway."
+    else
+        verdict="${GREEN}SIMPLE / CONTAINED${RESET}"
+        advisory="${BOLD}ADVISORY:${RESET}\nRPU matches Base Layer brightness.\nSafe to convert."
+    fi
+
+    echo "Base Layer Peak:      ${bl_peak} nits"
+    echo "RPU L1 Peak (Max):    ${rpu_peak} nits"
+    echo "Difference:           ${diff} nits"
+    echo "---------------------------------------------------"
+    echo -e "${BOLD}VERDICT:${RESET}    ${verdict}"
+    echo "---------------------------------------------------"
+    echo -e "$advisory"
+    echo "==================================================="
+    echo ""
+}
+
 # --- Reporting Commands ---
 cmd_check_single() {
     local file="$1"; analyze_file "$file"; local delay_ms=$(echo "scale=0; $VIDEO_DELAY/1000000" | bc)
@@ -1074,6 +1190,12 @@ case "$COMMAND" in
         if [ -z "$FILE" ]; then echo "Usage: -convert [file]"; exit 1; fi
         cmd_convert "$FILE" "manual"
         ;;
+    -inspect|--inspect)
+        FILE="$1"
+        if [ -z "$FILE" ]; then echo "Usage: -inspect [file]"; exit 1; fi
+        cmd_inspect "$FILE"
+        ;;
+
     -batch)
         DEPTH="$1"
         cmd_batch "${DEPTH:-1}"

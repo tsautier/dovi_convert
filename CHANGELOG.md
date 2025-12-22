@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`-force` Flag**: Override safety warnings for Complex FEL titles (e.g., `dovi_convert -convert movie.mkv -force`). Works for single file and batch mode.
 - **`-quick` Flag**: Skips the Deep Scan in `-check` mode.
 - **Improved Batch Summary**: Batch mode now tracks "Ignored" (Not Profile 7), "Skipped" (Unsafe), and "Converted" files separately. It also distinguishes between "Simple" and "Forced" conversions in the final report.
+- **`-inspect` Command**: New standalone tool to inspect full RPU structure and verify Complex FEL verdicts by checking the entire file's brightness metadata.
 
 ### Changed
 - **Default Behavior**: `-check` now performs a Deep Scan on Profile 7 files by default.
