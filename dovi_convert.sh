@@ -1,31 +1,12 @@
 #!/usr/bin/env bash
 # =============================================================================
-# dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v6.5 Beta)
+# dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v6.5)
 #
 # DESCRIPTION:
 #   Automates conversion of Dolby Vision Profile 7 MKV files (UHD Blu-ray)
 #   into Profile 8.1. This ensures compatibility with devices that do not support
-#   the Enhancement Layer (Apple TV 4K, Shield, etc.).
+#   the Enhancement Layer.
 #
-# NEW IN v6.4:
-#   - STANDARD MODE (Default): Uses ffmpeg piping for 2x speed and zero temp storage.
-#   - SMART FALLBACK: Detects stream errors (seamless branching) and offers Safe Mode.
-#   - BATCH INTELLIGENCE: Auto-skips corrupt files, auto-kills on full disk.
-#   - USER EXPERIENCE: Robust Spinner, metrics, and pagination.
-#
-# NEW IN v6.4.2:
-#   - DEBUG MODE: Replaces -v. Logs to 'dovi_convert_debug.log' for troubleshooting.
-#   - UNIFIED LOGGING: Smart error analysis now works in all modes.
-#   - CLEANUP UI: Now lists files before deletion. Non-recursive by default.
-#   - BATCH UI: Added file list overview and confirmation steps.
-#   - SAFETY: Strict argument validation and safe Auto-Yes (-y) scoping.
-#   - DOCS: Added caveats for multi-track files.
-#
-# NEW IN v6.5 Beta:
-#   - DEEP SCAN: Smart analysis to detect High-Impact FEL (Active Reconstruction).
-#   - SAFETY: Defaults to Skipping/Warning on Complex FELs to prevent data loss.
-#   - FLEXIBLE CLI: Flags (-force, -quick) can be used in any order.
-#   - FORCE MODE: Override safety checks with -force.
 # =============================================================================
 
 # --- Configuration & Constants ---
@@ -259,19 +240,19 @@ print_metrics() {
 
 # Concise usage guide
 print_usage() {
-    echo -e "${BOLD}dovi_convert v6.5 Beta${RESET}"
+    echo -e "${BOLD}dovi_convert v6.5${RESET}"
     echo "Usage:"
-    echo "  dovi_convert -check [file]          : Analyze file profile (Deep Scan by default)."
-    echo "  dovi_convert -inspect [file]        : Inspect full RPU structure of Profile 7 files."
-    echo "  dovi_convert -convert [file]        : Convert (Default: Standard Pipe)."
-    echo "  dovi_convert -convert [file] -safe  : Convert using Safe Mode (Disk Extraction)."
-    echo "  dovi_convert -batch [depth] [-y]    : Batch convert folder (-y to auto-confirm)."
-    echo "  dovi_convert -cleanup [-r] [-y]     : Delete tool backups (Optional: -r recursive)."
-    echo "  dovi_convert -help                  : Show detailed manual."
+    echo -e "  ${BOLD}dovi_convert -help                   : SHOW DETAILED MANUAL & EXAMPLES${RESET}"
+    echo "  dovi_convert -check                  : Analyze all MKV files in current directory."
+    echo "  dovi_convert -check   [file]         : Analyze profile of a specific file."
+    echo "  dovi_convert -inspect [file] [-safe] : Inspect full RPU structure (Active Brightness Check)."
+    echo "  dovi_convert -convert [file]         : Convert a file to DV Profile 8.1."
+    echo "  dovi_convert -convert [file] -safe   : Convert using Safe Mode (Disk Extraction)."
+    echo "  dovi_convert -batch   [depth] [-y]   : Batch convert folder (-y to auto-confirm)."
+    echo "  dovi_convert -cleanup [-r]    [-y]   : Delete tool backups (Optional: -r recursive)."
     echo ""
     echo "Options:"
     echo "  -force  : Override 'Complex FEL' warnings and force conversion."
-    echo "  -quick  : Skip 'Deep Scan' analysis (Legacy fast check)."
     echo "  -safe   : Force extraction to disk (Robust for Seamless Branching rips)."
     echo "  -delete : Auto-delete backups on success."
     echo "  -debug  : Generate dovi_convert_debug.log (Preserved on exit)."
@@ -328,7 +309,6 @@ print_help() {
     echo "       Perfoms Deep Scan by default."
     echo ""
     echo "       Options:"
-    echo -e "         ${BOLD}-quick${RESET}   Perform quick scan without FEL analysis (Cannot detect Complex FEL)."
     echo -e "         ${BOLD}-r${RESET}       Recursive scan (Default depth: 5 levels. Specify number to increase)."
     echo ""
     echo -e "  ${BOLD}-convert [file]${RESET}"
@@ -343,8 +323,9 @@ print_help() {
     echo "       Inspects full RPU structure to verify brightness metadata."
     echo "       Compares Peak Brightness in RPU vs Base Layer to detect active expansion."
     echo "       Use this to verify 'Complex FEL' verdicts. (Slow: Reads entire file)."
+    echo ""
+    echo "       Options:"
     echo -e "         ${BOLD}-safe${RESET}    Force Safe Mode (Disk Extraction fallback)."
-    echo -e "         ${BOLD}-delete${RESET}  Auto-delete backup on success."
     echo ""
     echo -e "  ${BOLD}-batch [depth]${RESET}"
     echo "       Recursively finds and converts all Profile 7 files in the current folder"
@@ -372,11 +353,7 @@ print_help() {
     echo "       Overrides the 'Complex FEL' detection. Use this if you want to convert"
     echo "       a Complex FEL file despite the potential loss of brightness data."
     echo ""
-    echo -e "  ${BOLD}-quick${RESET} [Check]"
-    echo -e "       ${YELLOW}Quick Scan Mode.${RESET}"
-    echo "       Skips the 'Deep Scan' (RPU Analysis) for Profile 7 files."
-    echo "       Uses basic MediaInfo checks only. Faster, but cannot detect Complex FEL."
-    echo ""
+
     echo -e "  ${BOLD}-safe${RESET}  [Convert, Batch]"
     echo -e "       ${YELLOW}Force Safe Mode (Extraction).${RESET}"
     echo "       Forces extraction of the video track to disk before converting."
@@ -438,14 +415,19 @@ cleanup_and_exit() {
 trap 'cleanup_and_exit 130' SIGINT SIGTERM
 
 # --- Analysis Logic ---
-analyze_file() {
+# --- Analysis Logic ---
+# Part 1: Identity / Metadata Extraction (Fast)
+get_video_details() {
     local file="$1"
-    # Optional mode arg if needed, but we rely on global flags mostly for check/convert context
-    # ideally analyze_file should just set status, and the caller decides to print or convert.
-    # But current architecture mixes them. Let's adapt.
     
     VIDEO_TRACK_ID=""; VIDEO_DELAY="0"; VIDEO_LANG=""; VIDEO_NAME="";
-    DOVI_STATUS=""; ACTION=""
+    MI_INFO_STRING="" # Raw MediaInfo string for decision making
+
+    if [[ ! -f "$file" ]]; then
+       MI_INFO_STRING="FILE_NOT_FOUND"
+       return
+    fi
+
 
     # 1. Get Track ID & Properties
     local mkv_json
@@ -453,7 +435,8 @@ analyze_file() {
     VIDEO_TRACK_ID=$(echo "$mkv_json" | jq -r '.tracks[] | select(.type=="video") | .id' | head -n 1)
 
     if [[ -z "$VIDEO_TRACK_ID" ]]; then
-        DOVI_STATUS="${RED}No Video Track${RESET}"; ACTION="SKIP"; return
+        MI_INFO_STRING="NO_TRACK"
+        return
     fi
 
     VIDEO_DELAY=$(echo "$mkv_json" | jq -r ".tracks[] | select(.id==$VIDEO_TRACK_ID) | .properties.minimum_timestamp // 0")
@@ -464,56 +447,72 @@ analyze_file() {
     local mi_json
     mi_json=$(mediainfo --Output=JSON "$file")
 
-    local combined_info
-    combined_info=$(echo "$mi_json" | jq -r '.media.track[] | select(.["@type"]=="Video") | "\(.HDR_Format) \(.HDR_Format_Profile) \(.CodecID)"' | tr '\n' ' ')
+    MI_INFO_STRING=$(echo "$mi_json" | jq -r '.media.track[] | select(.["@type"]=="Video") | "\(.HDR_Format) \(.HDR_Format_Profile) \(.CodecID)"' | tr '\n' ' ')
+}
+
+# Part 2: Policy / Decision Making (Can start Deep Scan)
+determine_action() {
+    local file="$1"
+    # Requires get_video_details to have run first
+    
+    DOVI_STATUS=""; ACTION=""
+
+    if [[ "$MI_INFO_STRING" == "FILE_NOT_FOUND" ]]; then
+        DOVI_STATUS="${RED}File not found${RESET}"; ACTION="ERROR"; return
+    fi
+
+    if [[ "$MI_INFO_STRING" == "NO_TRACK" ]]; then
+        DOVI_STATUS="${RED}No Video Track${RESET}"; ACTION="SKIP"; return
+    fi
 
     # 3. Decision Matrix
-    if [[ "$combined_info" == *"dvhe.07"* ]] || [[ "$combined_info" == *"Profile 7"* ]]; then
+    if [[ "$MI_INFO_STRING" == *"dvhe.07"* ]] || [[ "$MI_INFO_STRING" == *"Profile 7"* ]]; then
         # PROFILE 7 DETECTED
         
-        # Check for Quick Mode
-        if [ "$QUICK_CHECK_MODE" = true ]; then
-            DOVI_STATUS="${RED}DV Profile 7 (FEL/MEL)${RESET}"
+        # DEEP SCAN (Always runs now, -quick removed)
+        check_fel_complexity "$file"
+        
+        if [ "$FEL_VERDICT" == "COMPLEX" ]; then
+            DOVI_STATUS="${RED}DV Profile 7 FEL (Complex)${RESET}"
+            if [ "$FORCE_MODE" = true ]; then
+                ACTION="CONVERT (FORCED)"
+            else
+                ACTION="SKIP (Complex FEL)"
+            fi
+        elif [ "$FEL_VERDICT" == "SAFE" ]; then
+            DOVI_STATUS="${GREEN}DV Profile 7 FEL (Simple)${RESET}"
             ACTION="CONVERT"
         else
-            # DEEP SCAN
-            check_fel_complexity "$file"
-            
-            if [ "$FEL_VERDICT" == "COMPLEX" ]; then
-                DOVI_STATUS="${RED}DV Profile 7 FEL (Complex)${RESET}"
-                if [ "$FORCE_MODE" = true ]; then
-                    ACTION="CONVERT (FORCED)"
-                else
-                    ACTION="SKIP (Complex FEL)"
-                fi
-            elif [ "$FEL_VERDICT" == "SAFE" ]; then
-                DOVI_STATUS="${GREEN}DV Profile 7 FEL (Simple)${RESET}"
-                ACTION="CONVERT"
-            else
-                DOVI_STATUS="${YELLOW}DV Profile 7 (Check Failed)${RESET}"
-                ACTION="MANUAL CHECK"
-            fi
+            DOVI_STATUS="${YELLOW}DV Profile 7 (Check Failed)${RESET}"
+            ACTION="MANUAL CHECK"
         fi
 
-    elif [[ "$combined_info" == *"dvhe.08"* ]] || [[ "$combined_info" == *"Profile 8"* ]]; then
+    elif [[ "$MI_INFO_STRING" == *"dvhe.08"* ]] || [[ "$MI_INFO_STRING" == *"Profile 8"* ]]; then
         DOVI_STATUS="${CYAN}DV Profile 8.1${RESET}"; ACTION="IGNORE"
-    elif [[ "$combined_info" == *"dvhe.05"* ]] || [[ "$combined_info" == *"Profile 5"* ]]; then
+    elif [[ "$MI_INFO_STRING" == *"dvhe.05"* ]] || [[ "$MI_INFO_STRING" == *"Profile 5"* ]]; then
         DOVI_STATUS="${YELLOW}DV Profile 5 (Stream)${RESET}"; ACTION="IGNORE"
-    elif [[ "$combined_info" == *"Dolby Vision"* ]]; then
+    elif [[ "$MI_INFO_STRING" == *"Dolby Vision"* ]]; then
         DOVI_STATUS="${RED}DV Unknown Profile${RESET}"; ACTION="CONVERT"
     else
         # Granular Detection
-        if [[ "$combined_info" == *"2094"* ]]; then
+        if [[ "$MI_INFO_STRING" == *"2094"* ]]; then
             DOVI_STATUS="${CYAN}HDR10+${RESET}"
-        elif [[ "$combined_info" == *"HLG"* ]] || [[ "$combined_info" == *"Hybrid Log Gamma"* ]]; then
+        elif [[ "$MI_INFO_STRING" == *"HLG"* ]] || [[ "$MI_INFO_STRING" == *"Hybrid Log Gamma"* ]]; then
             DOVI_STATUS="${CYAN}HLG${RESET}"
-        elif [[ "$combined_info" == *"2086"* ]] || [[ "$combined_info" == *"HDR10"* ]]; then
+        elif [[ "$MI_INFO_STRING" == *"2086"* ]] || [[ "$MI_INFO_STRING" == *"HDR10"* ]]; then
             DOVI_STATUS="${CYAN}HDR10${RESET}"
         else
             DOVI_STATUS="${CYAN}SDR${RESET}"
         fi
         ACTION="IGNORE"
     fi
+}
+
+# Compatibility Wrapper (Legacy Analysis)
+analyze_file() {
+    local file="$1"
+    get_video_details "$file"
+    determine_action "$file"
 }
 
 # Command Wrapper
@@ -1001,15 +1000,12 @@ cmd_inspect() {
     fi
 
     # 1. Basic Validation
-    # Optimization: processing the full file anyway, so we skip the probe's Deep Scan
-    # by forcing Quick Mode for this check. This gives us the Track ID and Profile
-    # without the redundant 1s extraction delay.
-    local QUICK_CHECK_MODE=true 
-    analyze_file "$file" >/dev/null # populate globals
+    # Optimization: Call get_video_details only (Part 1).
+    get_video_details "$file" # populate globals (VIDEO_TRACK_ID, MI_INFO_STRING)
     
-    if [[ "$DOVI_STATUS" != *"Profile 7"* ]]; then
+    if [[ "$MI_INFO_STRING" != *"dvhe.07"* ]] && [[ "$MI_INFO_STRING" != *"Profile 7"* ]]; then
         echo -e "${RED}Error: File is not Dolby Vision Profile 7.${RESET}"
-        echo -e "Detected: $DOVI_STATUS"
+        echo -e "Detected: $DOVI_STATUS (Info: $MI_INFO_STRING)"
         exit 1
     fi
 
@@ -1017,30 +1013,87 @@ cmd_inspect() {
     echo "==================================================="
     echo -e "${BOLD}FULL RPU STRUCTURE INSPECTION${RESET}"
     echo "==================================================="
-    echo -e "File:       ${BOLD}$(basename "$file")${RESET}"
+    echo -e "File:       ${BOLD}$(basename -- "$file")${RESET}"
     echo -e "Format:     DV Profile 7 (Scanning...)"
     echo "---------------------------------------------------"
 
     local temp_rpu="inspect_$(date +%s)_$$.rpu"
-    
+    local use_safe_mode=$SAFE_MODE
+
     # 2. Extract Full RPU
-    # Use ffmpeg to stream video track to dovi_tool extract-rpu via pipe (Fastest Method)
-    # We suppress ffmpeg stderr here to avoid "Broken pipe" messages when user interrupts.
-    start_spinner "Extracting RPU (Full Track)... "
-    (ffmpeg -v error -i "$file" -map 0:$VIDEO_TRACK_ID -c:v copy -bsf:v hevc_mp4toannexb -f hevc - 2>/dev/null \
-    | dovi_tool extract-rpu - -o "$temp_rpu" >/dev/null 2>&1)
-    stop_spinner
-    
-    if [ ! -s "$temp_rpu" ]; then
-        echo -e "${RED}Error: RPU extraction failed (Empty RPU file).${RESET}"
-        rm -f "$temp_rpu"
-        exit 1
-    fi
-    printf "\r\e[KExtracting RPU... Done.\n"
+    # Loop to allow Fallback to Safe Mode
+    while true; do
+        if [ "$use_safe_mode" = false ]; then
+            # Method A: Standard Pipe (Fast)
+            start_spinner "Extracting RPU (Standard Pipe)... "
+            # Set pipefail to catch ffmpeg errors in the pipe chain
+            set -o pipefail
+            (ffmpeg -v error -i "$file" -map 0:$VIDEO_TRACK_ID -c:v copy -bsf:v hevc_mp4toannexb -f hevc - 2>/dev/null \
+            | dovi_tool extract-rpu - -o "$temp_rpu" >/dev/null 2>&1)
+            local status=$?
+            set +o pipefail
+            stop_spinner
+
+            if [ $status -eq 0 ] && [ -s "$temp_rpu" ]; then
+                printf "\r\e[KExtracting RPU... Done.\n"
+                break # Success
+            else
+                # Pipe Failed
+                printf "\r\e[KExtracting RPU... ${RED}Failed.${RESET}\n"
+                rm -f "$temp_rpu"
+                
+                # Check for Auto-Yes or Interactive
+                if [ "$AUTO_YES" = true ]; then
+                     echo -e "${YELLOW}Standard inspection failed. Auto-Yes enabled. Retrying with Safe Mode.${RESET}"
+                     use_safe_mode=true
+                     continue
+                else
+                     echo -e "${YELLOW}Notice: Standard inspection failed (likely Seamless Branching/Packet Issues).${RESET}"
+                     read -p "Retry using Safe Mode (Extraction to Disk)? [Y/n] " -n 1 -r
+                     echo ""
+                     if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
+                         use_safe_mode=true
+                         continue
+                     else
+                         echo -e "${RED}Aborted by user.${RESET}"
+                         exit 1
+                     fi
+                fi
+            fi
+        else
+            # Method B: Safe Mode (Extraction)
+            local raw_temp="inspect_temp_$(date +%s)_$$.hevc"
+            start_spinner "Extracting Track (Safe Mode)... "
+            mkvextract "$file" tracks "$VIDEO_TRACK_ID:$raw_temp" >/dev/null 2>&1
+            local res=$?
+            stop_spinner
+            
+            if [ $res -ne 0 ]; then
+                printf "\r\e[KExtracting Track... ${RED}Failed.${RESET}\n"
+                rm -f "$raw_temp"
+                exit 1
+            fi
+            printf "\r\e[KExtracting Track... Done.\n"
+
+            start_spinner "Extracting RPU (From Element)... "
+            dovi_tool extract-rpu "$raw_temp" -o "$temp_rpu" >/dev/null 2>&1
+            local status=$?
+            stop_spinner
+            
+            rm -f "$raw_temp" # Clean up large HEVC file
+
+            if [ $status -eq 0 ] && [ -s "$temp_rpu" ]; then
+                printf "\r\e[KExtracting RPU... Done.\n"
+                break
+            else
+                echo -e "${RED}Error: RPU extraction failed even in Safe Mode.${RESET}"
+                rm -f "$temp_rpu"
+                exit 1
+            fi
+        fi
+    done
 
     # 3. Analyze L1 (Summary Mode)
-    # We use 'dovi_tool info -s' to get the calculated MaxCLL from the scan.
-    # This avoids complex JSON parsing and is proven reliable.
     start_spinner "Analyzing L1 Metadata... "
     local analysis_output
     analysis_output=$(dovi_tool info -s -i "$temp_rpu" 2>&1)
@@ -1074,7 +1127,6 @@ cmd_inspect() {
     local advisory=""
 
     # Tolerance of 50 nits
-    # Tolerance of 50 nits
     if [ "$diff" -gt 50 ]; then
         verdict="${RED}COMPLEX FEL (Active Brightness Expansion)${RESET}"
         advisory="${BOLD}ADVISORY:${RESET}\nBrightness data exists in the Enhancement Layer.\nConversion will result in quality loss and incorrect tone mapping.\n\nUse -force to convert anyway."
@@ -1097,8 +1149,16 @@ cmd_inspect() {
 # --- Reporting Commands ---
 cmd_check_single() {
     local file="$1"; analyze_file "$file"; local delay_ms=$(echo "scale=0; $VIDEO_DELAY/1000000" | bc)
+    
+    if [[ "$MI_INFO_STRING" == "FILE_NOT_FOUND" ]]; then
+       echo -e "${RED}Error: File '$file' not found.${RESET}"
+       return
+    fi
+    
+    local name=$(basename -- "$file")
+
     echo "---------------------------------------------------"
-    echo -e "${BOLD}File:${RESET}   $(basename "$file")"
+    echo -e "${BOLD}File:${RESET}   $name"
     echo -e "${BOLD}Status:${RESET} $DOVI_STATUS"
     echo -e "${BOLD}Action:${RESET} $ACTION"
     echo "---------------------------------------------------"
@@ -1109,7 +1169,6 @@ cmd_check_all() {
     
     # 1. Build Header Message
     local scan_type="Deep Scan"
-    if [[ "$QUICK_CHECK_MODE" == true ]]; then scan_type="Quick Scan"; fi
     
     local location="in current directory"
     if [[ "$max_depth" -gt 1 ]]; then location="recursively ($max_depth levels deep)"; fi
@@ -1140,7 +1199,6 @@ for arg in "$@"; do
     case "$arg" in
         -force) FORCE_MODE=true ;;
         -safe)  SAFE_MODE=true ;;
-        -quick) QUICK_CHECK_MODE=true ;;
         -y)     AUTO_YES=true ;;
         -debug) DEBUG_MODE=true ;;
         -delete) DELETE_BACKUP=true ;;
