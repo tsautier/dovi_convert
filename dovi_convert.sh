@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v6.5)
+# dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v6.5.1)
 #
 # DESCRIPTION:
 #   Automates conversion of Dolby Vision Profile 7 MKV files (UHD Blu-ray)
@@ -19,6 +19,7 @@ ABORT_REQUESTED=false   # Internal flag for Ctrl+C handling
 DELETE_BACKUP=false     # Toggled by -delete
 SAFE_MODE=false         # Toggled by -safe
 AUTO_YES=false          # Toggled by -y
+INCLUDE_SIMPLE=false    # Toggled by -include-simple
 
 # Global Variables for Metrics
 START_TIME=0
@@ -58,10 +59,49 @@ print_log() {
     fi
 }
 
+# --- PQ EOTF Helper (Code Value -> Nits) ---
+pq_to_nits() {
+    local code_val="$1"
+    if [[ -z "$code_val" ]]; then echo "0"; return; fi
+    awk -v cv="$code_val" 'BEGIN {
+        # ST.2084 Constants
+        m1 = 2610.0 / 16384.0;
+        m2 = 2523.0 / 32.0;    # 2523/4096 * 128 = 2523/32
+        c1 = 3424.0 / 4096.0;
+        c2 = 2413.0 / 128.0;   # 2413/4096 * 32 = 2413/128
+        c3 = 2392.0 / 128.0;   # 2392/4096 * 32 = 2392/128
+        
+        # Normalize 12-bit code value (0-4095) to 0-1
+        V = cv / 4095.0;
+
+        if (V <= 0) { print 0; exit; }
+        
+        # Calculate V^(1/m2)
+        vp = exp(log(V) / m2);
+
+        # Calculate max(vp - c1, 0)
+        num = vp - c1;
+        if (num < 0) num = 0;
+
+        # Calculate c2 - c3*vp
+        den = c2 - c3 * vp;
+        if (den == 0) den = 0.000001; # Avoid div/0
+
+        # Calculate R = (num / den)^(1/m1)
+        base_val = num / den;
+        if (base_val < 0) base_val = 0;
+        
+        nits = 10000.0 * exp(log(base_val) / m1);
+        printf "%.0f", nits
+    }'
+}
+
 # ------------------------------------------------------------------------------
 # DEEP SCAN ANALYZER
 # ------------------------------------------------------------------------------
 
+# Analyzes the RPU of a file to detect "Active Reconstruction" (Complex FEL).
+# Sets globals: FEL_VERDICT (SAFE|COMPLEX|UNKNOWN) and FEL_REASON
 # Analyzes the RPU of a file to detect "Active Reconstruction" (Complex FEL).
 # Sets globals: FEL_VERDICT (SAFE|COMPLEX|UNKNOWN) and FEL_REASON
 check_fel_complexity() {
@@ -69,79 +109,175 @@ check_fel_complexity() {
     FEL_VERDICT="UNKNOWN"
     FEL_REASON="Analysis failed"
 
-    # print_log "${CYAN}Running Deep Scan on: $(basename "$file")...${RESET}" # Reduced noise as requested
-
-    # Temp file for HEVC snippet
-    local temp_hevc="probe_$(date +%s)_$$.hevc"
-    local temp_rpu="${temp_hevc}.rpu"
-
-    # 1. Extract 1 second of HEVC (reliable method)
-    if [[ "$DEBUG_MODE" == true ]]; then
-        ffmpeg -y -i "$file" -c:v copy -bsf:v hevc_mp4toannexb -f hevc -t 1 "$temp_hevc" >> dovi_convert_debug.log 2>&1
+    # 1. Determine Probe Points (10%, 50%, 90%)
+    local duration_ms
+    duration_ms=$(mediainfo --Output="Video;%Duration%" "$file" 2>/dev/null | cut -d. -f1)
+    
+    local timestamps=()
+    if [[ -z "$duration_ms" ]] || [[ "$duration_ms" -lt 10000 ]]; then
+        timestamps=(0) # Fallback to start
     else
-        ffmpeg -v error -y -i "$file" -c:v copy -bsf:v hevc_mp4toannexb -f hevc -t 1 "$temp_hevc" 2>/dev/null
+        local dur_sec=$(echo "$duration_ms / 1000" | bc)
+        # Probe at 10 points (5% to 95%) for maximum coverage of sparse peaks
+        timestamps=(
+            $(echo "$dur_sec * 0.05" | bc | cut -d. -f1)
+            $(echo "$dur_sec * 0.15" | bc | cut -d. -f1)
+            $(echo "$dur_sec * 0.25" | bc | cut -d. -f1)
+            $(echo "$dur_sec * 0.35" | bc | cut -d. -f1)
+            $(echo "$dur_sec * 0.45" | bc | cut -d. -f1)
+            $(echo "$dur_sec * 0.55" | bc | cut -d. -f1)
+            $(echo "$dur_sec * 0.65" | bc | cut -d. -f1)
+            $(echo "$dur_sec * 0.75" | bc | cut -d. -f1)
+            $(echo "$dur_sec * 0.85" | bc | cut -d. -f1)
+            $(echo "$dur_sec * 0.95" | bc | cut -d. -f1)
+        )
+    fi
+
+    # 2. Determine Base Layer Peak (Default 1000)
+    local bl_peak=1000
+    local detected_peak=""
+    
+    # Try MediaInfo first (reliable for mastering metadata)
+    # Output format example: "min: 0.0001 cd/m2, max: 1000 cd/m2"
+    local mi_out
+    mi_out=$(mediainfo --Output="Video;%MasteringDisplay_Luminance%" "$file" 2>/dev/null)
+    
+    if [[ "$mi_out" == *"max:"* ]]; then
+         detected_peak=$(echo "$mi_out" | grep -oE "max: [0-9]+" | awk '{print $2}')
+    elif [[ "$mi_out" =~ ^[0-9]+ ]]; then
+         detected_peak=$(echo "$mi_out" | cut -d. -f1)
     fi
     
-    if [ ! -s "$temp_hevc" ]; then
-         FEL_REASON="Probe extraction failed (ffmpeg error)"
-         rm -f "$temp_hevc"
-         return 1
+    # Fallback to ffprobe if empty
+    if [[ -z "$detected_peak" ]]; then
+         detected_peak=$(ffprobe -v error -select_streams v:0 -show_entries side_data=max_luminance -of default=noprint_wrappers=1:nokey=1 "$file" | head -n1)
     fi
+     
+    # Handle Rational (X/Y) or Integer
+    if [[ "$detected_peak" == */* ]]; then
+         bl_peak=$(echo "scale=0; $detected_peak" | bc -l | cut -d. -f1)
+    elif [[ "$detected_peak" =~ ^[0-9]+$ ]]; then
+         bl_peak=$detected_peak
+    fi
+     
+    # Sanity check (Mastering displays are usually 1000 or 4000)
+    # If < 100, assume error and default to 1000. 
+    # NOTE: Some early HDR is 400 nits, but rare. 100 is definitely an error or SDR.
+    if (( bl_peak < 100 )); then bl_peak=1000; fi
 
-    # 2. Extract RPU from HEVC (Detaches RPU from potentially messy slice structure)
+    local complex_signal=false
+    local probe_count=0
+    local threshold=$(( bl_peak + 50 ))
+
     if [[ "$DEBUG_MODE" == true ]]; then
-        dovi_tool extract-rpu "$temp_hevc" -o "$temp_rpu" >> dovi_convert_debug.log 2>&1
-    else
-         dovi_tool extract-rpu "$temp_hevc" -o "$temp_rpu" >/dev/null 2>&1
-    fi
-    
-    rm -f "$temp_hevc" # Done with HEVC
-
-    if [ ! -s "$temp_rpu" ]; then
-         FEL_REASON="RPU extraction failed (No RPU found or dovi_tool error)"
-         rm -f "$temp_rpu"
-         return 1
+         echo "[Deep Scan Debug] Base Layer Peak: $bl_peak nits (Threshold: $threshold)" >> dovi_convert_debug.log
     fi
 
-    # 3. Analyze the clean RPU file
-    local json_output
-    # Note: dovi_tool prints "Parsing RPU file..." to stdout, corrupting JSON.
-    # We use sed to strip everything before the first '{' character.
-    if [[ "$DEBUG_MODE" == true ]]; then
-         # In debug mode, we define json_output carefully to avoid capturing random debug text, 
-         # but we want to log the raw attempt. 
-         # We will run it twice? No, inefficient.
-         # Just capture stderr to log.
-         json_output=$(dovi_tool info -f 0 -i "$temp_rpu" 2>> dovi_convert_debug.log | sed -n '/^{/,$p')
-    else
-         json_output=$(dovi_tool info -f 0 -i "$temp_rpu" 2>/dev/null | sed -n '/^{/,$p')
-    fi
-    
-    rm -f "$temp_rpu" # Done with RPU
+    for t in "${timestamps[@]}"; do
+        local temp_hevc="probe_${t}_$(date +%s)_$$.hevc"
+        local temp_rpu="${temp_hevc}.rpu"
+        local temp_json="${temp_hevc}.json"
 
-    if [ -z "$json_output" ] || [ "$json_output" == "{" ]; then
-        FEL_REASON="Could not parse RPU (dovi_tool info error or empty)"
-        if [[ "$DEBUG_MODE" == true ]]; then echo "[Deep Scan Error] JSON Empty. Output: $json_output" >> dovi_convert_debug.log; fi
-        return 1
-    fi
+        # Extract 1 second of HEVC
+        if [[ "$DEBUG_MODE" == true ]]; then
+            ffmpeg -analyzeduration 100M -probesize 100M -ss "$t" -i "$file" -map 0:v:0 -c:v copy -an -sn -dn -bsf:v hevc_mp4toannexb -f hevc -t 1 "$temp_hevc" >> dovi_convert_debug.log 2>&1
+        else
+            ffmpeg -v error -analyzeduration 100M -probesize 100M -ss "$t" -i "$file" -map 0:v:0 -c:v copy -an -sn -dn -bsf:v hevc_mp4toannexb -f hevc -t 1 "$temp_hevc" 2>/dev/null
+        fi
 
-    # Check for MMR (Multi-Variate Multiple Regression)
-    # Using jq for robust JSON parsing
-    if echo "$json_output" | jq -e '.rpu_data_mapping.curves[] | select(.mapping_idc == "MMR")' >/dev/null 2>&1; then
+        if [[ ! -s "$temp_hevc" ]]; then rm -f "$temp_hevc"; continue; fi
+
+        # Extract RPU
+        if [[ "$DEBUG_MODE" == true ]]; then
+             dovi_tool extract-rpu "$temp_hevc" -o "$temp_rpu" >> dovi_convert_debug.log 2>&1
+        else
+             dovi_tool extract-rpu "$temp_hevc" -o "$temp_rpu" >/dev/null 2>&1
+        fi
+        rm -f "$temp_hevc"
+
+        if [[ ! -s "$temp_rpu" ]]; then rm -f "$temp_rpu"; continue; fi
+
+        # Analyze L1
+        if [[ "$DEBUG_MODE" == true ]]; then
+             dovi_tool export -i "$temp_rpu" -d all="$temp_json" >> dovi_convert_debug.log 2>&1
+        else
+             dovi_tool export -i "$temp_rpu" -d all="$temp_json" >/dev/null 2>&1
+        fi
+        rm -f "$temp_rpu"
+        
+        if [[ ! -s "$temp_json" ]]; then rm -f "$temp_json"; continue; fi
+
+        ((probe_count++))
+        
+        # Check EL Type (MEL = Safe)
+        # Using grep on temp_json directly (faster than cat/tr)
+        if grep -q '"el_type":"MEL"' "$temp_json"; then
+             FEL_VERDICT="SAFE"
+             FEL_REASON="Minimal Enhancement Layer (MEL) Detected"
+             rm -f "$temp_json"
+             return 0
+        fi
+        
+        # Extract L1 Max
+        local l1_max=""
+        if command -v jq >/dev/null; then
+             # Use robust recursive search for Level1 or l1, finding max_pq or max
+             # Use file directly!
+             l1_max=$(jq '[.. | .Level1? // .l1? | .max_pq? // .max? // empty] | max' "$temp_json" 2>/dev/null)
+             
+             # Debug logging if extraction fails
+             if [[ -z "$l1_max" || "$l1_max" == "null" ]]; then
+                 if [[ "$DEBUG_MODE" == true ]]; then
+                     echo "[Deep Scan Debug] Probe @ ${t}s : L1 Extraction Failed via jq." >> dovi_convert_debug.log
+                     echo "[Deep Scan Debug] JSON Start: $(head -c 200 "$temp_json")" >> dovi_convert_debug.log
+                 fi
+                 l1_max=""
+             fi
+        else
+             # Regex Fallback
+             # We need flat json for grep regex
+             local flat_json
+             flat_json=$(tr -d '[:space:]' < "$temp_json")
+             l1_max=$(echo "$flat_json" | grep -oE '"(Level1|l1|L1)":\{[^}]*"(max|max_pq|Max)":[0-9]+' | grep -oE '[0-9]+$' | sort -rn | head -1)
+        fi
+
+        # Cleanup JSON now (unless debugging?)
+        # Actually keep it if debug mode? No, too many files.
+        rm -f "$temp_json"
+
+
+        if [[ "$l1_max" == "null" ]]; then l1_max=""; fi
+
+        if [[ -n "$l1_max" ]]; then
+             # Convert PQ Code Value to Nits for accurate comparison
+             local l1_nits=$(pq_to_nits "$l1_max")
+             
+             if [[ "$DEBUG_MODE" == true ]]; then
+                  echo "[Deep Scan Debug] Probe @ ${t}s : L1 Raw=$l1_max -> ${l1_nits} nits vs Threshold=$threshold (BL=$bl_peak)" >> dovi_convert_debug.log
+             fi
+
+             if (( l1_nits > threshold )); then
+                 complex_signal=true
+                 FEL_REASON="Active Reconstruction (L1: ${l1_nits} nits > BL: ${bl_peak} nits @ ${t}s)"
+                 break
+             fi
+        elif [[ "$DEBUG_MODE" == true ]]; then
+             echo "[Deep Scan Debug] Probe @ ${t}s : No L1 Found." >> dovi_convert_debug.log
+        fi
+    done
+
+    if [[ "$probe_count" -eq 0 ]]; then
+        FEL_REASON="Extraction failed (No probes succeeded)"
+        # Default to Complex if we can't read it (Safety First)
         FEL_VERDICT="COMPLEX"
-        FEL_REASON="Active Reconstruction (MMR Mapping Detected)"
         return 0
     fi
 
-    # Check for Active NLQ Offsets (Non-Zero)
-    # If the offset array is anything other than [0,0,0], it's active reconstruction.
-    if echo "$json_output" | jq -e '.rpu_data_mapping.nlq.nlq_offset | select(. != [0,0,0])' >/dev/null 2>&1; then
+    if [[ "$complex_signal" == true ]]; then
         FEL_VERDICT="COMPLEX"
-        FEL_REASON="Active Reconstruction (Non-Zero NLQ Offsets)"
         return 0
     fi
 
-    # If we got here: Polynomial(0) and NLQ=[0,0,0] (or NLQ missing)
     FEL_VERDICT="SAFE"
     FEL_REASON="Static / Simple FEL (Safe to Convert)"
     return 0
@@ -240,7 +376,7 @@ print_metrics() {
 
 # Concise usage guide
 print_usage() {
-    echo -e "${BOLD}dovi_convert v6.5${RESET}"
+    echo -e "${BOLD}dovi_convert v6.5.1${RESET}"
     echo "Usage:"
     echo -e "  ${BOLD}dovi_convert -help                   : SHOW DETAILED MANUAL & EXAMPLES${RESET}"
     echo "  dovi_convert -check                  : Analyze all MKV files in current directory."
@@ -282,9 +418,10 @@ print_help() {
     echo -e "${BOLD}FEL HANDLING (DEEP SCAN)${RESET}"
     echo "  The tool automatically performs a 'Deep Scan' on all Profile 7 files."
     echo "  It analyzes the RPU metadata to distinguish between:"
-    echo -e "  1. ${GREEN}Simple FEL / MEL${RESET}: Metadata-only or static. Safe to convert. (Default)"
-    echo -e "  2. ${RED}Complex FEL${RESET}: Contains active 12-bit reconstruction data (MMR or NLQ)."
-    echo "     Converting these files discards brightness data. The tool will SKIP them."
+    echo -e "  1. ${GREEN}Simple FEL / MEL${RESET}: No active brightness expansion detected. Likely safe to convert. (Default)"
+    echo -e "  2. ${RED}Complex FEL${RESET}: Expands luminance beyond base layer luminance."
+    echo "     Converting these files discards brightness data and will lead to incorrect"
+    echo "     tone mapping. The tool will automatically skip these files."
     echo ""
     echo -e "${BOLD}AUTOMATIC BACKUPS${RESET}"
     echo "  The tool automatically preserves your original file before any modification."
@@ -328,15 +465,14 @@ print_help() {
     echo -e "         ${BOLD}-safe${RESET}    Force Safe Mode (Disk Extraction fallback)."
     echo ""
     echo -e "  ${BOLD}-batch [depth]${RESET}"
-    echo "       Recursively finds and converts all Profile 7 files in the current folder"
-    echo "       and subfolders (up to 'depth' levels deep)."
-    echo "       Use -y to skip the interactive confirmation steps."
-    echo "       Complex FELs are skipped unless overridden."
+    echo -e "       Scan directory and convert safe Profile 7 files."
+    echo -e "       Default depth is 1 (current dir). Use '-batch 2' for subfolders."
     echo ""
     echo "       Options:"
-    echo -e "         ${BOLD}-y${RESET}       Skip confirmation prompts."
-    echo -e "         ${BOLD}-force${RESET}   Convert Complex FELs (Apply to all)."
-    echo -e "         ${BOLD}-delete${RESET}  Auto-delete backups."
+    echo -e "         ${BOLD}-y${RESET}               Skip confirmation prompts (Auto-Yes)."
+    echo -e "         ${BOLD}-include-simple${RESET}  Allow auto-conversion of Simple FEL files in Auto-Yes mode."
+    echo -e "         ${BOLD}-force${RESET}           Force convert 'Complex FEL' files (Apply to all)."
+    echo -e "         ${BOLD}-delete${RESET}          Auto-delete backups after successful conversion."
     echo ""
     echo -e "  ${BOLD}-cleanup${RESET}"
     echo -e "       Scans for and deletes ${CYAN}*.mkv.bak.dovi_convert${RESET} files in the current directory."
@@ -490,8 +626,12 @@ determine_action() {
                 ACTION="SKIP (Complex FEL)"
             fi
         elif [ "$FEL_VERDICT" == "SAFE" ]; then
-            DOVI_STATUS="${GREEN}DV Profile 7 FEL (Simple)${RESET}"
-            ACTION="CONVERT"
+            if [[ "$FEL_REASON" == *"MEL"* ]]; then
+                 DOVI_STATUS="${GREEN}DV Profile 7 MEL (Safe)${RESET}"
+            else
+                 DOVI_STATUS="${CYAN}DV Profile 7 FEL (Simple)${RESET}" # Cyan for Statistical Safety
+            fi
+            ACTION="${GREEN}CONVERT${RESET}"
         else
             DOVI_STATUS="${YELLOW}DV Profile 7 (Check Failed)${RESET}"
             ACTION="MANUAL CHECK"
@@ -858,24 +998,37 @@ cmd_batch() {
     local total_batch_size=0
 
     echo -e "${BOLD}Scanning for Profile 7 files (Depth: $max_depth)...${RESET}"
+    
+    local simple_fel_queue=()
+
     while IFS= read -r -d '' file; do
         analyze_file "$file"
-        if [[ "$ACTION" == CONVERT* ]]; then
+        
+        # Check specific status for queuing logic
+        local is_simple=false
+        if [[ "$DOVI_STATUS" == *"FEL (Simple)"* ]]; then is_simple=true; fi
+
+        if [[ "$ACTION" == *CONVERT* ]]; then
             conversion_queue+=("$file")
+            
             if [[ "$ACTION" == *"FORCED"* ]]; then
                 ((forced_count++))
-            else
+            elif [ "$is_simple" = true ]; then
                 ((simple_count++))
+                simple_fel_queue+=("$file")
+            else
+                # Clean MEL is just count
+                ((simple_count++)) 
             fi
+
             local f_size=$(get_file_size "$file")
             total_batch_size=$((total_batch_size + f_size))
+
         elif [[ "$ACTION" == "IGNORE" ]]; then
             ((ignored_count++))
         elif [[ "$FEL_VERDICT" == "COMPLEX" ]]; then
-             # Separately track Complex FEL skips
             ((complex_count++))
         else
-            # SKIP (Invalid/No Track/etc)
             ((skipped_count++))
         fi
     done < <(find . -maxdepth "$max_depth" -name "*.mkv" -print0 | sort -z)
@@ -888,10 +1041,16 @@ cmd_batch() {
     # --- Interactive Overview ---
     local queue_count=${#conversion_queue[@]}
     local total_size_gb=$(human_size_gb $total_batch_size)
+    local simple_fel_count=${#simple_fel_queue[@]}
+    local mel_count=$((simple_count - simple_fel_count))
 
     echo -e "\n${BOLD}Batch Overview:${RESET}"
-    if [[ $simple_count -gt 0 ]]; then
-        echo -e "  Convert:        ${GREEN}$simple_count${RESET}   (Simple FEL / MEL)"
+    
+    if [[ $mel_count -gt 0 ]]; then
+        echo -e "  Convert:        ${GREEN}$mel_count${RESET}   (MEL - Safe)"
+    fi
+    if [[ $simple_fel_count -gt 0 ]]; then
+        echo -e "  Convert:        ${CYAN}$simple_fel_count${RESET}   (Simple FEL - Likely Safe)"
     fi
     if [[ $forced_count -gt 0 ]]; then
         echo -e "  Convert:        ${YELLOW}$forced_count${RESET}   (Complex FEL - Forced)"
@@ -899,9 +1058,20 @@ cmd_batch() {
     if [[ $complex_count -gt 0 ]]; then
         echo -e "  Skip:           ${RED}$complex_count${RESET}   (Complex FEL)"
     fi
-    echo -e "  Queue Size:     ${CYAN}$total_size_gb${RESET}"
+    echo -e "  Queue Size:     ${CYAN}$total_size_gb${RESET} ($queue_count files)"
 
+    # --- SAFETY GATE ---
     if [[ "$AUTO_YES" == true ]]; then
+        # Check for Simple FEL without permission
+         if [[ $simple_fel_count -gt 0 ]] && [[ "$INCLUDE_SIMPLE" == false ]]; then
+              echo -e "\n${RED}[!] SAFETY STOP:${RESET} Simple FEL files detected in Auto-Mode."
+              echo -e "    Warning: Batch includes $simple_fel_count 'Simple FEL' files."
+              echo -e "    For details, run -check first."
+              echo -e "    To automate their conversion, you must add: ${BOLD}-include-simple${RESET}"
+              echo -e "    Skipping batch execution."
+              return 1
+         fi
+        
         echo -e "${YELLOW}Auto-Yes (-y) active. Starting conversion immediately...${RESET}"
         sleep 2
     else
@@ -919,9 +1089,16 @@ cmd_batch() {
             for f in "${conversion_queue[@]}"; do echo " - $f"; done
         fi
 
-        printf "\nProceed with conversion? (Y/n) "
+        if [[ $simple_fel_count -gt 0 ]]; then
+             echo -e "\n${YELLOW}[!] WARNING: Batch includes $simple_fel_count 'Simple FEL' files.${RESET}"
+             echo -e "    For details, run -check first."
+             printf "    Proceed with these files? (y/N) "
+        else
+             printf "\nProceed with conversion? (Y/n) "
+        fi
+        
         read -r REPLY
-        if [[ "$REPLY" =~ ^[Nn]$ ]]; then
+        if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
             echo "Batch cancelled."
             return 0
         fi
@@ -934,12 +1111,18 @@ cmd_batch() {
 
     local current_idx=1
     local success_simple_count=0; local success_forced_count=0
+    local success_simple_fel_count=0
 
     for file in "${conversion_queue[@]}"; do
         if [[ "$ABORT_REQUESTED" == true ]]; then break; fi
 
         echo "---------------------------------------------------"
         echo -e "${BOLD}[$current_idx/$queue_count]${RESET} Processing: $(basename "$file")"
+        
+        # Re-analyze to ensure DOVI_STATUS/FEL_VERDICT is fresh for this file
+        # (Needed because global vars are stale from the initial scan loop)
+        analyze_file "$file" >/dev/null
+
         cmd_convert "$file" "auto"
         local res=$?
 
@@ -951,6 +1134,9 @@ cmd_batch() {
                 ((success_forced_count++))
             else
                 ((success_simple_count++))
+                if [[ "$DOVI_STATUS" == *"Simple"* ]]; then
+                     ((success_simple_fel_count++))
+                fi
             fi
         elif [[ $res -eq 2 ]]; then
             # Should not happen since we filtered queue, but if it does (e.g. file vanished)
@@ -971,7 +1157,14 @@ cmd_batch() {
     echo "==================================================="
     echo "Processed:"
     if [[ $success_simple_count -gt 0 ]]; then
-        echo -e "  - Converted:   ${GREEN}$success_simple_count${RESET}   (Simple FEL / MEL)"
+        local mel_count=$((success_simple_count - success_simple_fel_count))
+        local breakdown=""
+        if [[ $success_simple_fel_count -gt 0 ]]; then
+             breakdown="(${CYAN}$success_simple_fel_count Simple FEL${RESET} / ${GREEN}$mel_count MEL${RESET})"
+        else
+             breakdown="(${GREEN}MEL / Safe${RESET})"
+        fi
+        echo -e "  - Converted:   ${GREEN}$success_simple_count${RESET}   $breakdown"
     fi
     if [[ $success_forced_count -gt 0 ]]; then
         echo -e "  - Converted:   ${YELLOW}$success_forced_count${RESET}   (Complex FEL - Forced)"
@@ -1010,8 +1203,7 @@ cmd_inspect() {
     fi
 
     # 1. Basic Validation
-    # Optimization: Call get_video_details only (Part 1).
-    get_video_details "$file" # populate globals (VIDEO_TRACK_ID, MI_INFO_STRING)
+    get_video_details "$file"
     
     if [[ "$MI_INFO_STRING" != *"dvhe.07"* ]] && [[ "$MI_INFO_STRING" != *"Profile 7"* ]]; then
         echo -e "${RED}Error: File is not Dolby Vision Profile 7.${RESET}"
@@ -1021,22 +1213,54 @@ cmd_inspect() {
 
     echo ""
     echo "==================================================="
-    echo -e "${BOLD}FULL RPU STRUCTURE INSPECTION${RESET}"
+    echo "FULL RPU STRUCTURE INSPECTION"
     echo "==================================================="
     echo -e "File:       ${BOLD}$(basename -- "$file")${RESET}"
     echo -e "Format:     DV Profile 7 (Scanning...)"
     echo "---------------------------------------------------"
+    
+    # --- MEL Fast-Pass (Pre-Flight) ---
+    start_spinner "Checking EL Structure (Pre-Flight)... "
+    local pf_hevc="inspect_pf_$(date +%s)_$$.hevc"
+    local pf_rpu="${pf_hevc}.rpu"
+    local pf_json="${pf_hevc}.json"
+    local mel_detected=false
+
+    ffmpeg -v error -y -i "$file" -c:v copy -bsf:v hevc_mp4toannexb -f hevc -t 1 "$pf_hevc" 2>/dev/null
+    if [[ -s "$pf_hevc" ]]; then
+         dovi_tool extract-rpu "$pf_hevc" -o "$pf_rpu" >/dev/null 2>&1
+         if [[ -s "$pf_rpu" ]]; then
+              dovi_tool export -i "$pf_rpu" -d all="$pf_json" >/dev/null 2>&1
+              if [[ -s "$pf_json" ]]; then
+                   if grep -q '"el_type":"MEL"' "$pf_json"; then
+                        mel_detected=true
+                   fi
+              fi
+         fi
+    fi
+    rm -f "$pf_hevc" "$pf_rpu" "$pf_json"
+    stop_spinner
+
+    if [[ "$mel_detected" == true ]]; then
+         printf "\r\e[KChecking EL Structure... Done (MEL Detected).\n"
+         echo "---------------------------------------------------"
+         echo -e "${BOLD}VERDICT:${RESET}    ${GREEN}MEL (Minimal Enhancement Layer)${RESET}"
+         echo "---------------------------------------------------"
+         echo -e "${BOLD}ADVISORY:${RESET}\nFile is identified as MEL (empty enhancement layer).\nIt contains no video data to discard.\nAbsolutely safe to convert."
+         echo "==================================================="
+         echo ""
+         return 0
+    fi
+    printf "\r\e[KChecking EL Structure... Done (FEL Detected - Proceeding).\n"
 
     local temp_rpu="inspect_$(date +%s)_$$.rpu"
+    local temp_json="inspect_$(date +%s)_$$.json"
     local use_safe_mode=$SAFE_MODE
 
     # 2. Extract Full RPU
-    # Loop to allow Fallback to Safe Mode
     while true; do
         if [ "$use_safe_mode" = false ]; then
-            # Method A: Standard Pipe (Fast)
             start_spinner "Extracting RPU (Standard Pipe)... "
-            # Set pipefail to catch ffmpeg errors in the pipe chain
             set -o pipefail
             (ffmpeg -v error -i "$file" -map 0:$VIDEO_TRACK_ID -c:v copy -bsf:v hevc_mp4toannexb -f hevc - 2>/dev/null \
             | dovi_tool extract-rpu - -o "$temp_rpu" >/dev/null 2>&1)
@@ -1046,32 +1270,26 @@ cmd_inspect() {
 
             if [ $status -eq 0 ] && [ -s "$temp_rpu" ]; then
                 printf "\r\e[KExtracting RPU... Done.\n"
-                break # Success
+                break
             else
-                # Pipe Failed
                 printf "\r\e[KExtracting RPU... ${RED}Failed.${RESET}\n"
                 rm -f "$temp_rpu"
                 
-                # Check for Auto-Yes or Interactive
                 if [ "$AUTO_YES" = true ]; then
-                     echo -e "${YELLOW}Standard inspection failed. Auto-Yes enabled. Retrying with Safe Mode.${RESET}"
+                     echo -e "${YELLOW}Retrying with Safe Mode (Auto-Yes).${RESET}"
                      use_safe_mode=true
                      continue
                 else
-                     echo -e "${YELLOW}Notice: Standard inspection failed (likely Seamless Branching/Packet Issues).${RESET}"
                      read -p "Retry using Safe Mode (Extraction to Disk)? [Y/n] " -n 1 -r
                      echo ""
                      if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
-                         use_safe_mode=true
-                         continue
+                         use_safe_mode=true; continue
                      else
-                         echo -e "${RED}Aborted by user.${RESET}"
-                         exit 1
+                         echo -e "${RED}Aborted.${RESET}"; exit 1
                      fi
                 fi
             fi
         else
-            # Method B: Safe Mode (Extraction)
             local raw_temp="inspect_temp_$(date +%s)_$$.hevc"
             start_spinner "Extracting Track (Safe Mode)... "
             mkvextract "$file" tracks "$VIDEO_TRACK_ID:$raw_temp" >/dev/null 2>&1
@@ -1079,75 +1297,122 @@ cmd_inspect() {
             stop_spinner
             
             if [ $res -ne 0 ]; then
-                printf "\r\e[KExtracting Track... ${RED}Failed.${RESET}\n"
-                rm -f "$raw_temp"
-                exit 1
+                echo -e "\n${RED}Extracting Track Failed.${RESET}"; rm -f "$raw_temp"; exit 1
             fi
             printf "\r\e[KExtracting Track... Done.\n"
 
-            start_spinner "Extracting RPU (From Element)... "
+            start_spinner "Extracting RPU... "
             dovi_tool extract-rpu "$raw_temp" -o "$temp_rpu" >/dev/null 2>&1
             local status=$?
             stop_spinner
-            
-            rm -f "$raw_temp" # Clean up large HEVC file
+            rm -f "$raw_temp"
 
             if [ $status -eq 0 ] && [ -s "$temp_rpu" ]; then
                 printf "\r\e[KExtracting RPU... Done.\n"
                 break
             else
-                echo -e "${RED}Error: RPU extraction failed even in Safe Mode.${RESET}"
-                rm -f "$temp_rpu"
-                exit 1
+                echo -e "\n${RED}RPU Extraction Failed.${RESET}"; rm -f "$temp_rpu"; exit 1
             fi
         fi
     done
 
-    # 3. Analyze L1 (Summary Mode)
-    start_spinner "Analyzing L1 Metadata... "
-    local analysis_output
-    analysis_output=$(dovi_tool info -s -i "$temp_rpu" 2>&1)
+    # 3. Export to JSON (Capture stderr to silence 'Parsing...' noise)
+    start_spinner "Exporting Metadata (Slow)... "
+    dovi_tool export -i "$temp_rpu" -d all="$temp_json" >/dev/null 2>&1
+    local export_res=$?
     stop_spinner
-    printf "\r\e[KAnalyzing L1 Metadata... Done.\n"
-
+    
     rm -f "$temp_rpu"
 
-    # 4. Parse Data
-    local bl_peak
-    # MediaInfo MasteringDisplay_Luminance format: "min: 0.0001 cd/m2, max: 1000 cd/m2"
-    local raw_bl_peak
-    raw_bl_peak=$(mediainfo --Output="Video;%MasteringDisplay_Luminance%" "$file" | grep -o "max: [0-9]*" | grep -o "[0-9]*")
-    bl_peak="${raw_bl_peak:-1000}" # Default to 1000 if extraction fails
-
-    local rpu_peak
-    # Parse "RPU content light level (L1): MaxCLL: 254.98 nits"
-    # We use awk to find the line containing "MaxCLL" and extract the number.
-    local raw_rpu_peak
-    raw_rpu_peak=$(echo "$analysis_output" | grep "RPU content light level (L1)" | grep -o "MaxCLL: [0-9.]*" | grep -o "[0-9.]*")
-    
-    # Round to integer using printf/bash arithmetic
-    if [[ -n "$raw_rpu_peak" ]]; then
-        rpu_peak=$(printf "%.0f" "$raw_rpu_peak")
-    else
-        rpu_peak=0
+    if [[ $export_res -ne 0 ]] || [[ ! -s "$temp_json" ]]; then
+         echo -e "\r\e[KExporting Metadata... ${RED}Failed.${RESET}"
+         rm -f "$temp_json"
+         exit 1
     fi
+    printf "\r\e[KExporting Metadata... Done.\n"
 
-    local diff=$(( rpu_peak - bl_peak ))
+    # 4. Analyze Statistics
+    start_spinner "Calculating Robust Peak (99.9th)... "
+    
+    # We want both the count ($c) and the peak ($a[idx])
+    # Bug Fix: Use recursive search (..) to find Level1/l1/max_pq anywhere, matching Deep Scan logic.
+    local stats_output
+    stats_output=$(jq -r '[.. | .Level1? // .l1? | .max_pq? // .max? // empty] | map(select(. != null)) | .[]' "$temp_json" 2>/dev/null | sort -n | awk '
+      BEGIN {c=0}
+      {a[c++]=$1}
+      END {
+        if (c==0) {print "0 0"; exit}
+        idx=int(c*0.999)
+        print c " " a[idx]
+      }
+    ')
+    stop_spinner
+    rm -f "$temp_json"
+
+    # Split output into vars
+    local frame_count=$(echo "$stats_output" | cut -d' ' -f1)
+    local robust_peak=$(echo "$stats_output" | cut -d' ' -f2)
+
+    # Round to integer if needed and CONVERT TO NITS
+    if [[ -n "$robust_peak" ]]; then
+        robust_peak=$(printf "%.0f" "$robust_peak")
+        robust_peak=$(pq_to_nits "$robust_peak")
+    else
+        robust_peak=0
+    fi
+    printf "\r\e[KCalculating Robust Peak... Done.\n"
+    
+    # 5. Verdict Logic
+    # 5. Verdict Logic
+    local raw_bl_peak=""
+    local mi_out_insp
+    mi_out_insp=$(mediainfo --Output="Video;%MasteringDisplay_Luminance%" "$file" 2>/dev/null)
+    
+    if [[ "$mi_out_insp" == *"max:"* ]]; then
+         raw_bl_peak=$(echo "$mi_out_insp" | grep -oE "max: [0-9]+" | awk '{print $2}')
+    elif [[ "$mi_out_insp" =~ ^[0-9]+ ]]; then
+         raw_bl_peak=$(echo "$mi_out_insp" | cut -d. -f1)
+    fi
+    
+    # Fallback to ffprobe
+    if [[ -z "$raw_bl_peak" ]]; then
+         raw_bl_peak=$(ffprobe -v error -select_streams v:0 -show_entries side_data=max_luminance -of default=noprint_wrappers=1:nokey=1 "$file" | head -n1 | cut -d. -f1)
+    fi
+    
+    local bl_peak="${raw_bl_peak:-1000}" 
+    
+    # Sanity check BL
+    if (( bl_peak < 100 )); then bl_peak=1000; fi
+
+    local threshold=$(( bl_peak + 50 ))
+    local diff=$(( robust_peak - bl_peak ))
     local verdict=""
     local advisory=""
 
-    # Tolerance of 50 nits
-    if [ "$diff" -gt 50 ]; then
-        verdict="${RED}COMPLEX FEL (Active Brightness Expansion)${RESET}"
-        advisory="${BOLD}ADVISORY:${RESET}\nBrightness data exists in the Enhancement Layer.\nConversion will result in quality loss and incorrect tone mapping.\n\nUse -force to convert anyway."
+    if [[ "$frame_count" -eq 0 ]]; then
+         # Special Warning for Empty L1
+         verdict="${YELLOW}NO L1 METADATA${RESET}"
+         advisory="${RED}WARNING:${RESET} No valid L1 brightness metadata found in FEL.\nThis is unusual for non-MEL files. Proceed with caution."
+         robust_peak="N/A"
+         diff="N/A"
+    elif [ "$robust_peak" -gt "$threshold" ]; then
+         verdict="${RED}COMPLEX FEL (Active Brightness Expansion)${RESET}"
+         advisory="${BOLD}ADVISORY:${RESET}\nFEL Peak ($robust_peak nits) exceeds Base Layer ($bl_peak nits).\nThis indicates active brightness expansion in the FEL.\nConversion will likely cause clipping or tone-mapping errors."
     else
-        verdict="${GREEN}SIMPLE / CONTAINED${RESET}"
-        advisory="${BOLD}ADVISORY:${RESET}\nRPU matches Base Layer brightness.\nSafe to convert."
+         verdict="${GREEN}SIMPLE / SAFE${RESET}"
+         advisory="${BOLD}ADVISORY:${RESET}\nFEL Peak ($robust_peak nits) is within safe range of Base Layer ($bl_peak nits).\nSafe to convert."
     fi
 
-    echo "Base Layer Peak:      ${bl_peak} nits"
-    echo "RPU L1 Peak (Max):    ${rpu_peak} nits"
-    echo "Difference:           ${diff} nits"
+    echo "Base Layer Peak (MDL):  ${bl_peak} nits"
+    echo "L1 Analysis:          ${frame_count} frames analyzed"
+    echo "FEL Peak Brightness:  ${robust_peak} nits"
+    
+    if [ "$robust_peak" -gt "$threshold" ]; then
+         echo "Brightness Expansion: ${RED}+${diff} nits (Active)${RESET}"
+    else
+         echo "Brightness Expansion: ${GREEN}None (Safe)${RESET}"
+    fi
+
     echo "---------------------------------------------------"
     echo -e "${BOLD}VERDICT:${RESET}    ${verdict}"
     echo "---------------------------------------------------"
@@ -1172,6 +1437,23 @@ cmd_check_single() {
     echo -e "${BOLD}Status:${RESET} $DOVI_STATUS"
     echo -e "${BOLD}Action:${RESET} $ACTION"
     echo "---------------------------------------------------"
+
+    if [[ "$DOVI_STATUS" == *"FEL (Simple)"* ]]; then
+        echo ""
+        echo "================================================================================================"
+        echo -e "${BOLD}ADVISORY: UNDERSTANDING 'SIMPLE' (CYAN) VERDICTS${RESET}"
+        echo "------------------------------------------------------------------------------------------------"
+        echo -e "${BOLD}What is 'Simple FEL'?${RESET}"
+        echo "It means the deep scan detected no active brightness expansion over the Base Layer. This strongly"
+        echo "suggests the file is likely safe to convert."
+        echo ""
+        echo -e "${BOLD}How accurate is the deep scan?${RESET}"
+        echo "The script takes 10 samples at different timestamps of the video to analyze peak brightness in"
+        echo "the FEL. While this is statistically accurate enough to determine whether the FEL expands luminance"
+        echo "over the Base Layer, it can't guarantee a definitive result. If accurate preservation is paramount"
+        echo "for a specific file, please verify it with -inspect before converting."
+        echo "================================================================================================"
+    fi
 }
 
 cmd_check_all() {
@@ -1190,13 +1472,38 @@ cmd_check_all() {
     echo "------------------------------------------------------------------------------------------------"
     
     # 3. Iterate
+    local simple_count=0
     while IFS= read -r -d '' file; do
         analyze_file "$file"
         local name="${file#./}"; 
         # Truncate filename (Strict 48 chars + '...')
         if [ ${#name} -gt 48 ]; then name="${name:0:48}..."; fi
+
+        # Track Simple FEL for footer
+        if [[ "$DOVI_STATUS" == *"FEL (Simple)"* ]]; then
+             ((simple_count++))
+        fi
+
         printf "%-50s %-36b %b\n" "$name" "${DOVI_STATUS}" "${ACTION}"
     done < <(find . -maxdepth "$max_depth" -name "*.mkv" -print0 | sort -z)
+
+    # 4. Conditional Advisory
+    if [ "$simple_count" -gt 0 ]; then
+        echo ""
+        echo "================================================================================================"
+        echo -e "${BOLD}ADVISORY: UNDERSTANDING 'SIMPLE' (CYAN) VERDICTS${RESET}"
+        echo "------------------------------------------------------------------------------------------------"
+        echo -e "${BOLD}What is 'Simple FEL'?${RESET}"
+        echo "It means the deep scan detected no active brightness expansion over the Base Layer. This strongly"
+        echo "suggests the file is likely safe to convert."
+        echo ""
+        echo -e "${BOLD}How accurate is the deep scan?${RESET}"
+        echo "The script takes 10 samples at different timestamps of the video to analyze peak brightness in"
+        echo "the FEL. While this is statistically accurate enough to determine whether the FEL expands luminance"
+        echo "over the Base Layer, it can't guarantee a definitive result. If accurate preservation is paramount"
+        echo "for a specific file, please verify it with -inspect before converting."
+        echo "================================================================================================"
+    fi
 }
 
 # ------------------------------------------------------------------------------
@@ -1210,6 +1517,7 @@ for arg in "$@"; do
         -force) FORCE_MODE=true ;;
         -safe)  SAFE_MODE=true ;;
         -y)     AUTO_YES=true ;;
+        -include-simple) INCLUDE_SIMPLE=true ;;
         -debug) DEBUG_MODE=true ;;
         -delete) DELETE_BACKUP=true ;;
         *) ARGS+=("$arg") ;; # Keep non-global args

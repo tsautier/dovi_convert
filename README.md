@@ -6,6 +6,10 @@ This conversion ensures compatibility with media players that do not support the
 
 Make sure to read important notes in the [Caveats and Notes](#caveats-and-notes) section.
 
+## Important Note on Update 6.5.1
+
+The previous version contained some inaccuracies in the FEL detection logic. If you are still running 6.5 or earlier versions, please **update to 6.5.1**.
+
 ## Table of Contents
 
 - [Features](#features)
@@ -93,7 +97,8 @@ dovi_convert -check -r 2         # Analyze recursively (depth 2)
 dovi_convert -check "Film.mkv"   # Analyze specific file
 ```
 The tool will output details with the results of the scan and a verdict for each file:
-*   **Green:** Safe to convert (Simple FEL/MEL).
+*   **Green:** Safe to convert (MEL).
+*   **Cyan:** Likely safe to convert (Simple FEL).
 *   **Red:** Complex FEL (Active Brightness). Conversion is skipped by default.
 
 ### 2. Advanced Inspection
@@ -123,13 +128,16 @@ dovi_convert -convert "Complex_Movie.mkv" -force
 ```
 
 ### 4. Batch Processing
-Recursively scans for Profile 7 files and converts them. Automatically **skips** Complex FEL files unless `-force` is used, which will convert all files.
+Recursively scans for Profile 7 files and converts them. Automatically **skips** Complex FEL files unless `-force` is used.
+
+**Note on Simple FEL:** If the batch detects files marked as "Simple FEL", it will pause and ask for confirmation to ensure they are safe, even if you use `-y`. To automate these, use the `-include-simple` flag.
+
 ```bash
 dovi_convert -batch           # Process current directory only
 dovi_convert -batch 2         # Process 2 folders deep
-dovi_convert -batch -y        # Run without confirmation prompts
+dovi_convert -batch -y        # Run without confirmation prompts (Stops on Simple FEL)
+dovi_convert -batch -y -include-simple  # Run fully automated (Includes Simple FEL)
 dovi_convert -batch -force    # Convert ALL files (including Complex FEL)
-dovi_convert -batch 2 -force  # Recursive force conversion
 ```
 
 ### 5. Cleanup
@@ -153,11 +161,18 @@ If a conversion fails:
 ## Caveats and Notes
 
 ### 1. A note on FEL (Full Enhancement Layer)
-This script discards the Enhancement Layer while retaining the RPU (dynamic metadata). For **most** content, this works perfectly. However, a small number of films use FEL to **elevate brightness** beyond the base layer (e.g., a 4000-nit master where the HDR10 base layer is a 1000-nit trim pass). For these specific titles, the retained RPU metadata may produce suboptimal tone mapping because it was designed for the combined layers.
+This script discards the Enhancement Layer while retaining the RPU (dynamic metadata). For a lot of content, this works perfectly. However, a number of films use FEL to elevate brightness beyond the base layer (e.g., a 4000-nit master where the HDR10 base layer is a 1000-nit trim pass). For these specific titles, the retained RPU metadata may produce suboptimal tone mapping because it was designed for the combined layers.
 
-*   **Detection:** This tool's deep scan feature detects these files and will advise you to **SKIP** them.
-*   **Recommendation:** For Complex FEL titles, it is often better to watch the HDR10 base layer (or use a dedicated FEL-capable player like the Ugoos AM6B+) than to convert them to Profile 8.1.
-*   **Reference List:** As a last resort, check the [Official DoVi_Scripts FEL List](https://docs.google.com/spreadsheets/d/15i0a84uiBtWiHZ5CXZZ7wygLFXwYOd84/edit?gid=828864432#gid=828864432) (maintained by **RESET_9999**, author of [DoVi_Scripts](https://github.com/R3S3t9999/DoVi_Scripts)) for a maintained list of confimed "Complex FEL" titles.
+*   **MEL (Minimal Enhancement Layer):** These files are safe to convert, as the EL contains no data. This is very common.
+*   **FEL (Full Enhancement Layer):** These files contain an active video layer.
+    *   **Complex FEL:** A significant number of FEL titles use this layer to expand brightness (as described above). Converting these results in incorrect tone mapping.
+    *   **Simple FEL:** Occasionally, FEL is used but does not expand brightness beyond the Base Layer. These are safe.
+
+**Detection:** This tool's "Deep Scan" feature automatically distinguishes between these types. It will advise you to **SKIP** Complex FEL files to prevent quality loss.
+
+**Recommendation:** For verified Complex FEL titles, it is better to watch the HDR10 base layer (or use a dedicated FEL-capable player like the **Ugoos AM6B+**) than to convert them to Profile 8.1.
+
+**Reference List:** If you want to cross-check the scan results of this script, refer to the [Official DoVi_Scripts FEL List](https://docs.google.com/spreadsheets/d/15i0a84uiBtWiHZ5CXZZ7wygLFXwYOd84/edit?gid=828864432#gid=828864432) (maintained by **RESET_9999**, author of DoVi_Scripts).
 
 ### 2. Single Video Track Only
 The converted file will contain exactly one video track (the main movie). Secondary video streams (such as Picture-in-Picture commentary or Multi-Angle views) will be dropped because the conversion process isolates the main video track. All audio and subtitle tracks are preserved.

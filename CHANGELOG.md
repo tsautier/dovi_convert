@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.5.1] - 2025-12-24
+### Added
+- Batch output now displays separate counts for MEL and Simple FEL files.
+- Added warnings when "Simple FEL" files are detected in batch mode.
+- `-include-simple` flag to allow automated processing of "Simple FEL" files in batch mode.
+- Added context to the check command explaining "Simple FEL" results.
+
+### Changed
+- Improved detection logic to be more robust and accurate.
+- Improved handling of titles mastered at 4000 nits.
+- Batch mode now defaults to pausing if "Simple FEL" files are found, even with `-y`.
+- Updated help text descriptions for clarity.
+
 ## [6.5] - 2025-12-22
 ### Added
 - **Deep Scan FEL Detection**: New  analysis logic that inspects the RPU structure (Active NLQ/MMR) to deterministically identify "Complex" FEL titles (e.g. FEL that elevates luminance and shouldn't be converted to profile 8.1).
