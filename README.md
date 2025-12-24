@@ -51,7 +51,7 @@ Automatically scans MKV files, detects HDR standards (e.g. HDR10, HDR10+, Dolby 
 
 A dedicated `-inspect` command to manually verify brightness expansion (Luminance check) when you want to confirm a "Complex FEL" verdict.
 
-*   **Why use it?** The default deep scan samples a small part of the file to detect meaningful FEL data, but it might flag files that are actually safe to convert. `-inspect` digs deeper by extracting and analyzing the entire FEL frame-by-frame. This takes significantly longer but provides a definitive answer on whether brightness expansion is present.
+*   **Why use it?** The default deep scan samples a small part of the file to detect meaningful FEL data, but it might miss isolated brightness spikes between the sample points. `-inspect` digs deeper by extracting and analyzing the entire FEL frame-by-frame. This takes significantly longer but provides a definitive answer on whether brightness expansion is present.
 *   Because it is "data-heavy" and slow, batch processing is not available for `-inspect`. This feature is designed to be used for "one-off" inspections of individual files, for cases where you are in doubt about the verdict of the default deep scan.
 
 ## Compatibility
