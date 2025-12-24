@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v6.5.1)
+# dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v6.5.2)
 #
 # DESCRIPTION:
 #   Automates conversion of Dolby Vision Profile 7 MKV files (UHD Blu-ray)
@@ -21,6 +21,12 @@ SAFE_MODE=false         # Toggled by -safe
 AUTO_YES=false          # Toggled by -y
 INCLUDE_SIMPLE=false    # Toggled by -include-simple
 
+# App Data
+VERSION="6.5.2"
+REPO_URL="https://api.github.com/repos/cryptochrome/dovi_convert/releases/latest"
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/dovi_convert"
+UPDATE_FILE="$CACHE_DIR/latest_version"
+
 # Global Variables for Metrics
 START_TIME=0
 ORIG_SIZE=0
@@ -32,7 +38,7 @@ if ! pwd > /dev/null 2>&1; then
 fi
 
 # --- Pre-Flight: Dependency Check ---
-for tool in mkvmerge mkvextract dovi_tool mediainfo jq bc ffmpeg; do
+for tool in mkvmerge mkvextract dovi_tool mediainfo jq bc ffmpeg curl; do
     if ! command -v "$tool" &> /dev/null; then
         echo -e "${RED}Error: Missing dependency '$tool'.${RESET}"
         echo "Please install it using your system's package manager."
@@ -57,6 +63,85 @@ print_log() {
     if [ "$DEBUG_MODE" = true ]; then
         echo -e "[$(date '+%Y-%m-%d %H:%M:%S')] $msg" | sed 's/\x1b\[[0-9;]*m//g' >> "dovi_convert_debug.log"
     fi
+}
+
+# --- Version Comparison Helper ---
+version_gt() {
+    # Returns 0 if $1 > $2 (First is greater than Second)
+    local v1=${1#v}
+    local v2=${2#v}
+    
+    if [[ "$v1" == "$v2" ]]; then return 1; fi
+    
+    local IFS=.
+    local i v1_parts=($v1) v2_parts=($v2)
+    
+    for ((i=0; i<${#v1_parts[@]}; i++)); do
+        if [[ -z ${v2_parts[i]} ]]; then return 0; fi # v1 longer = greater
+        if (( ${v1_parts[i]} > ${v2_parts[i]} )); then return 0; fi
+        if (( ${v1_parts[i]} < ${v2_parts[i]} )); then return 1; fi
+    done
+    
+    # If we are here, v1 is prefix of v2 or equal. 
+    # v1 cannot be greater.
+    return 1
+}
+
+# --- Update Check Logic ---
+
+# Background: Fetches latest tag from GitHub and saves to file (Zero Latency for user)
+check_for_updates_background() {
+    # Run in subshell, completely detached
+    (
+        mkdir -p "$CACHE_DIR"
+        # 3 second timeout to prevent hanging independent processes
+        latest_tag=$(curl -s --max-time 3 "$REPO_URL" | jq -r .tag_name 2>/dev/null)
+        
+        if [[ -n "$latest_tag" && "$latest_tag" != "null" ]]; then
+            echo "$latest_tag" > "$UPDATE_FILE"
+        fi
+    ) &
+}
+
+# Foreground: Checks if a new version was found in PREVIOUS run
+check_update_status_foreground() {
+    if [[ -f "$UPDATE_FILE" ]]; then
+        local latest_version
+        latest_version=$(cat "$UPDATE_FILE")
+        
+        if version_gt "$latest_version" "$VERSION"; then
+             # Version Mismatch - likely an update
+             # We can do a smarter semantic check if needed, but for now difference = update
+             # Note: This might flag dev versions, but acceptable.
+             
+             echo -e "${Cyan}---------------------------------------------------${RESET}"
+             echo -e "${BOLD}Update Available:${RESET} ${GREEN}$latest_version${RESET} (Current: v$VERSION)"
+             echo -e "Get it at: https://github.com/cryptochrome/dovi_convert"
+             echo -e "${Cyan}---------------------------------------------------${RESET}"
+             echo ""
+        fi
+    fi
+}
+
+cmd_update_check_manual() {
+    echo -e "${BOLD}Checking for updates...${RESET}"
+    local latest_tag
+    latest_tag=$(curl -s --max-time 10 "$REPO_URL" | jq -r .tag_name 2>/dev/null)
+    
+    if [[ -z "$latest_tag" || "$latest_tag" == "null" ]]; then
+        echo -e "${RED}Error: Could not fetch update info from GitHub.${RESET}"
+        return 1
+    fi
+    
+    echo "Latest Version:  $latest_tag"
+    echo "Current Version: v$VERSION"
+    
+     if version_gt "$latest_tag" "$VERSION"; then
+         echo -e "\n${GREEN}Update Available!${RESET}"
+         echo "Download at: https://github.com/cryptochrome/dovi_convert"
+     else
+         echo -e "\n${GREEN}You are up to date.${RESET}"
+     fi
 }
 
 # --- PQ EOTF Helper (Code Value -> Nits) ---
@@ -376,7 +461,7 @@ print_metrics() {
 
 # Concise usage guide
 print_usage() {
-    echo -e "${BOLD}dovi_convert v6.5.1${RESET}"
+    echo -e "${BOLD}dovi_convert v${VERSION}${RESET}"
     echo "Usage:"
     echo -e "  ${BOLD}dovi_convert -help                   : SHOW DETAILED MANUAL & EXAMPLES${RESET}"
     echo "  dovi_convert -check                  : Analyze all MKV files in current directory."
@@ -386,6 +471,7 @@ print_usage() {
     echo "  dovi_convert -convert [file] -safe   : Convert using Safe Mode (Disk Extraction)."
     echo "  dovi_convert -batch   [depth] [-y]   : Batch convert folder (-y to auto-confirm)."
     echo "  dovi_convert -cleanup [-r]    [-y]   : Delete tool backups (Optional: -r recursive)."
+    echo "  dovi_convert -update-check           : Check for software updates."
     echo ""
     echo "Options:"
     echo "  -force  : Override 'Complex FEL' warnings and force conversion."
@@ -480,7 +566,11 @@ print_help() {
     echo ""
     echo "       Options:"
     echo -e "         ${BOLD}-r${RESET}       Recursive scan."
+    echo -e "         ${BOLD}-r${RESET}       Recursive scan."
     echo -e "         ${BOLD}-y${RESET}       Skip confirmation prompts."
+    echo ""
+    echo -e "  ${BOLD}-update-check${RESET}"
+    echo "       Checks GitHub permissions for the latest release."
     echo ""
     echo -e "${BOLD}OPTION DETAILS${RESET}"
     echo ""
@@ -544,7 +634,10 @@ cleanup_and_exit() {
 
         if [[ "$BATCH_RUNNING" == true ]]; then return 130; else echo "Exiting."; exit 130; fi
     fi
-
+    
+    # Trigger background update check on clean exit
+    check_for_updates_background
+    
     if [[ "$BATCH_RUNNING" == true ]]; then return $exit_code; fi
     exit $exit_code
 }
@@ -1535,7 +1628,9 @@ fi
 
 # Pass 2: Action Dispatch
 if [ $# -eq 0 ]; then
+    check_update_status_foreground
     print_usage
+    check_for_updates_background
     exit 0
 fi
 
@@ -1585,7 +1680,11 @@ case "$COMMAND" in
             cmd_cleanup "false"
         fi
         ;;
+    -update-check)
+        cmd_update_check_manual
+        ;;
     -help|--help)
+        check_update_status_foreground
         if command -v less &> /dev/null && [ -t 1 ]; then
             print_help | less -R
         else
@@ -1598,3 +1697,6 @@ case "$COMMAND" in
         exit 1
         ;;
 esac
+
+# Trigger background update check on clean exit
+check_for_updates_background
