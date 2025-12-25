@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v6.5.2)
+# dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v6.6)
 #
 # DESCRIPTION:
 #   Automates conversion of Dolby Vision Profile 7 MKV files (UHD Blu-ray)
@@ -22,7 +22,7 @@ AUTO_YES=false          # Toggled by -y
 INCLUDE_SIMPLE=false    # Toggled by -include-simple
 
 # App Data
-VERSION="6.5.2"
+VERSION="6.6"
 REPO_URL="https://api.github.com/repos/cryptochrome/dovi_convert/releases/latest"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/dovi_convert"
 UPDATE_FILE="$CACHE_DIR/latest_version"
@@ -37,14 +37,199 @@ if ! pwd > /dev/null 2>&1; then
     exit 1
 fi
 
-# --- Pre-Flight: Dependency Check ---
-for tool in mkvmerge mkvextract dovi_tool mediainfo jq bc ffmpeg curl; do
-    if ! command -v "$tool" &> /dev/null; then
-        echo -e "${RED}Error: Missing dependency '$tool'.${RESET}"
-        echo "Please install it using your system's package manager."
+# --- Pre-Flight: Dependency Check & Auto-Install ---
+
+# Package name mapping (command -> package name per manager)
+# Format: "command:brew:apt:dnf:pacman"
+DEP_MAP=(
+    "mkvmerge:mkvtoolnix:mkvtoolnix:mkvtoolnix:mkvtoolnix"
+    "mkvextract:mkvtoolnix:mkvtoolnix:mkvtoolnix:mkvtoolnix"
+    "dovi_tool:dovi_tool:dovi_tool:dovi_tool:dovi_tool"
+    "mediainfo:mediainfo:mediainfo:mediainfo:mediainfo"
+    "jq:jq:jq:jq:jq"
+    "bc:bc:bc:bc:bc"
+    "ffmpeg:ffmpeg:ffmpeg:ffmpeg:ffmpeg"
+    "curl:curl:curl:curl:curl"
+)
+
+get_pkg_name() {
+    local cmd="$1" pm="$2"
+    for entry in "${DEP_MAP[@]}"; do
+        IFS=':' read -r e_cmd e_brew e_apt e_dnf e_pacman <<< "$entry"
+        if [[ "$e_cmd" == "$cmd" ]]; then
+            case "$pm" in
+                brew) echo "$e_brew" ;;
+                apt) echo "$e_apt" ;;
+                dnf) echo "$e_dnf" ;;
+                pacman) echo "$e_pacman" ;;
+            esac
+            return
+        fi
+    done
+    echo "$cmd"  # Fallback to command name
+}
+
+check_pkg_available() {
+    local pkg="$1" pm="$2"
+    case "$pm" in
+        brew) brew info "$pkg" &>/dev/null ;;
+        apt) apt-cache show "$pkg" &>/dev/null ;;
+        dnf) dnf info "$pkg" &>/dev/null 2>&1 ;;
+        pacman) pacman -Si "$pkg" &>/dev/null 2>&1 ;;
+    esac
+}
+
+install_dependencies() {
+    local missing=("$@")
+    local pm="" pm_install="" needs_sudo=false is_arch=false
+    local installed=() failed=() manual=()
+    
+    # Detect package manager
+    if command -v brew &>/dev/null; then
+        pm="brew"; pm_install="brew install"; needs_sudo=false
+    elif command -v apt &>/dev/null; then
+        pm="apt"; pm_install="sudo apt install -y"; needs_sudo=true
+    elif command -v dnf &>/dev/null; then
+        pm="dnf"; pm_install="sudo dnf install -y"; needs_sudo=true
+    elif command -v pacman &>/dev/null; then
+        pm="pacman"; pm_install="sudo pacman -S --noconfirm"; needs_sudo=true; is_arch=true
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS without Homebrew
+        echo -e "${YELLOW}Homebrew is not installed.${RESET}"
+        echo "It's the recommended way to install dependencies on macOS."
+        echo ""
+        echo "Install it from: https://brew.sh"
+        echo ""
+        echo "Then run dovi_convert again."
+        exit 1
+    else
+        echo -e "${RED}Unsupported system.${RESET} Please install dependencies manually:"
+        for dep in "${missing[@]}"; do echo "  - $dep"; done
         exit 1
     fi
+    
+    # Sudo warning
+    if [[ "$needs_sudo" == true ]]; then
+        echo ""
+        echo -e "${YELLOW}Note: Installation requires administrator privileges.${RESET}"
+        echo "You may be prompted for your password."
+        echo ""
+    fi
+    
+    local total=${#missing[@]}
+    local idx=1
+    
+    # Track unique packages to avoid duplicate installs (mkvmerge & mkvextract = mkvtoolnix)
+    local already_installed=()
+    
+    for cmd in "${missing[@]}"; do
+        local pkg=$(get_pkg_name "$cmd" "$pm")
+        
+        # Skip if we already installed this package
+        if [[ " ${already_installed[*]} " =~ " ${pkg} " ]]; then
+            ((idx++))
+            continue
+        fi
+        
+        echo -n "[$idx/$total] Installing $cmd ($pkg)... "
+        
+        # Check if package is available in repos
+        if ! check_pkg_available "$pkg" "$pm"; then
+            echo -e "${YELLOW}Not in repos.${RESET}"
+            manual+=("$cmd")
+            ((idx++))
+            continue
+        fi
+        
+        # Attempt install
+        if $pm_install "$pkg" &>/dev/null; then
+            echo -e "${GREEN}Done.${RESET}"
+            installed+=("$cmd")
+            already_installed+=("$pkg")
+        else
+            echo -e "${RED}Failed.${RESET}"
+            failed+=("$cmd")
+        fi
+        ((idx++))
+    done
+    
+    # Summary
+    echo ""
+    echo "---------------------------------------------------"
+    echo -e "${BOLD}INSTALLATION SUMMARY${RESET}"
+    echo "---------------------------------------------------"
+    
+    if [[ ${#installed[@]} -gt 0 ]]; then
+        echo -e "Installed:    ${GREEN}${installed[*]}${RESET}"
+    fi
+    if [[ ${#failed[@]} -gt 0 ]]; then
+        echo -e "Failed:       ${RED}${failed[*]}${RESET}"
+    fi
+    if [[ ${#manual[@]} -gt 0 ]]; then
+        echo -e "Manual Setup: ${YELLOW}${manual[*]}${RESET}"
+    fi
+    
+    # Manual install instructions
+    if [[ ${#manual[@]} -gt 0 ]] || [[ ${#failed[@]} -gt 0 ]]; then
+        echo ""
+        local needs_manual=("${manual[@]}" "${failed[@]}")
+        
+        for dep in "${needs_manual[@]}"; do
+            if [[ "$dep" == "dovi_tool" ]]; then
+                echo "dovi_tool must be installed manually:"
+                if [[ "$is_arch" == true ]]; then
+                    echo "  AUR:    https://aur.archlinux.org/packages/dovi_tool-bin"
+                fi
+                echo "  GitHub: https://github.com/quietvoid/dovi_tool/releases"
+            else
+                echo "$dep must be installed manually using your package manager."
+            fi
+        done
+        
+        echo ""
+        echo "Please install, then run dovi_convert again."
+        echo "---------------------------------------------------"
+        exit 1
+    fi
+    
+    echo "---------------------------------------------------"
+    echo -e "${GREEN}All dependencies installed successfully!${RESET}"
+    echo ""
+}
+
+# Check for missing dependencies
+MISSING_DEPS=()
+for entry in "${DEP_MAP[@]}"; do
+    cmd="${entry%%:*}"
+    if ! command -v "$cmd" &>/dev/null; then
+        # Avoid duplicate entries (mkvmerge and mkvextract are same package)
+        if [[ ! " ${MISSING_DEPS[*]} " =~ " ${cmd} " ]]; then
+            MISSING_DEPS+=("$cmd")
+        fi
+    fi
 done
+
+if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
+    echo -e "${RED}Missing dependencies:${RESET} ${MISSING_DEPS[*]}"
+    echo ""
+    printf "Would you like to install them automatically? (y/N) "
+    read -r REPLY
+    
+    if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+        install_dependencies "${MISSING_DEPS[@]}"
+    else
+        echo ""
+        echo "Please install the missing dependencies manually:"
+        for dep in "${MISSING_DEPS[@]}"; do
+            if [[ "$dep" == "dovi_tool" ]]; then
+                echo "  - dovi_tool: https://github.com/quietvoid/dovi_tool/releases"
+            else
+                echo "  - $dep"
+            fi
+        done
+        exit 1
+    fi
+fi
 
 # --- Helper Functions ---
 human_size_gb() { echo $(echo "scale=2; $1/1024/1024/1024" | bc) "GB"; }

@@ -6,10 +6,6 @@ This conversion ensures compatibility with media players that do not support the
 
 Make sure to read important notes in the [Caveats and Notes](#caveats-and-notes) section.
 
-## Important Note on Update 6.5.1
-
-The previous version contained some inaccuracies in the FEL detection logic. If you are still running 6.5 or earlier versions, please **update to 6.5.1**.
-
 ## Table of Contents
 
 - [Features](#features)
@@ -22,6 +18,7 @@ The previous version contained some inaccuracies in the FEL detection logic. If 
     - [3. Single File Conversion](#3-single-file-conversion)
     - [4. Batch Processing](#4-batch-processing)
     - [5. Cleanup](#5-cleanup)
+    - [6. Update Check](#6-update-check)
 - [Troubleshooting](#troubleshooting)
 - [Caveats and Notes](#caveats-and-notes)
 
@@ -69,6 +66,9 @@ This script works on:
 *   [MediaInfo](https://mediaarea.net/en/MediaInfo/Download)
 *   [jq](https://jqlang.github.io/jq/download/)
 *   [bc](https://www.gnu.org/software/bc/)
+*   [curl](https://curl.se/) (standard on most systems)
+
+**Automatic Installation (Beta):** If any dependencies are missing, the tool will offer to install them for you using your system's package manager (Homebrew, apt, dnf, or pacman).
 
 ## Installation
 
@@ -147,6 +147,12 @@ dovi_convert -cleanup         # Clean current dir only
 dovi_convert -cleanup -r      # Clean recursively
 ```
 **Safety Note:** The script checks if the "Parent" MKV exists. If the main movie file is missing, the backup is treated as an "orphan" and will **not** be deleted.
+
+### 6. Update Check
+The tool automatically checks for updates in the background. If a new version is available, a notification is displayed on the next run. To check immediately:
+```bash
+dovi_convert -update-check
+```
 
 ## Troubleshooting
 
