@@ -4,7 +4,9 @@ A Bash script to automate the conversion of Dolby Vision Profile 7 MKV files (UH
 
 This conversion ensures compatibility with media players that do not support the Profile 7 Enhancement Layer (EL), such as the Apple TV 4K (with Plex or Infuse), Nvidia Shield (to a certain extent), Zidoo, and other devices, preventing fallback to standard HDR10 and other issues. The result is a highly compatible file that can be played on a wide range of devices.
 
-Make sure to read important notes in the [Caveats and Notes](#caveats-and-notes) section.
+### Important Note
+
+Converting Dolby Vision Profile 7 with FEL to Profile 8 is always a compromise. Make sure you read and understand the [Caveats and Notes](#caveats-and-notes) before you use this script.
 
 ## Table of Contents
 
@@ -46,9 +48,10 @@ Automatically scans MKV files, detects HDR standards (e.g. HDR10, HDR10+, Dolby 
 
 ### Dolby Vision Dynamic Metadata (RPU) Inspection
 
-A dedicated `-inspect` command to manually verify brightness expansion (Luminance check) when you want to confirm a "Complex FEL" verdict.
+A dedicated `-inspect` command to manually verify brightness expansion (Luminance check) if you want to verify the deep scan verdict.
 
 *   **Why use it?** The default deep scan samples a small part of the file to detect meaningful FEL data, but it might miss isolated brightness spikes between the sample points. `-inspect` digs deeper by extracting and analyzing the entire FEL frame-by-frame. This takes significantly longer but provides a definitive answer on whether brightness expansion is present.
+* You should always use it if you don't trust the deep scan verdict, especially on Simple FEL files.
 *   Because it is "data-heavy" and slow, batch processing is not available for `-inspect`. This feature is designed to be used for "one-off" inspections of individual files, for cases where you are in doubt about the verdict of the default deep scan.
 
 ## Compatibility
@@ -66,7 +69,7 @@ This script works on:
 *   [MediaInfo](https://mediaarea.net/en/MediaInfo/Download)
 *   [jq](https://jqlang.github.io/jq/download/)
 *   [bc](https://www.gnu.org/software/bc/)
-*   [curl](https://curl.se/) (standard on most systems)
+*   [curl](https://curl.se/)
 
 **Automatic Installation (Beta):** If any dependencies are missing, the tool will offer to install them for you using your system's package manager (Homebrew, apt, dnf, or pacman).
 
