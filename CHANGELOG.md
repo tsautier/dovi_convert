@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [6.5] - 2025-12-22
 ### Added
-- **Deep Scan FEL Detection**: New  analysis logic that inspects the RPU structure to deterministically identify "Complex" FEL titles (e.g. FEL that elevates luminance and shouldn't be converted to profile 8.1).
+- **Deep Scan FEL Detection**: New analysis logic that inspects the RPU structure to deterministically identify "Complex" FEL titles (e.g. FEL that elevates luminance and shouldn't be converted to profile 8.1).
 - **`-force` Flag**: Override safety warnings for Complex FEL titles (e.g., `dovi_convert -convert movie.mkv -force`). Works for single file and batch mode.
 - **Improved Batch Summary**: Batch mode now tracks "Ignored" (Not Profile 7), "Skipped" (Unsafe), and "Converted" files separately. It also distinguishes between "Simple" and "Forced" conversions in the final report.
 - **`-inspect` Command**: New standalone tool to inspect full RPU structure and verify Complex FEL verdicts by checking the entire file's brightness metadata.
