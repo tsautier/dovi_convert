@@ -1349,7 +1349,7 @@ cmd_batch() {
         else
             ((skipped_count++))
         fi
-    done < <(find . -maxdepth "$max_depth" -name "*.mkv" ! -name "._*" -print0 | sort -z)
+    done < <(find . -maxdepth "$max_depth" -name "*.mkv" ! -name "._*" ! -path "*/._*/*" -print0 | sort -z)
 
     if [[ ${#conversion_queue[@]} -eq 0 && $complex_count -eq 0 ]]; then 
          echo "No Profile 7 files found (Ignored: $ignored_count)."
@@ -1805,7 +1805,7 @@ cmd_check_all() {
         fi
 
         printf "%-50s %-36b %b\n" "$name" "${DOVI_STATUS}" "${ACTION}"
-    done < <(find . -maxdepth "$max_depth" -name "*.mkv" ! -name "._*" -print0 | sort -z)
+    done < <(find . -maxdepth "$max_depth" -name "*.mkv" ! -name "._*" ! -path "*/._*/*" -print0 | sort -z)
 
     # 4. Conditional Advisory
     if [ "$simple_count" -gt 0 ]; then
