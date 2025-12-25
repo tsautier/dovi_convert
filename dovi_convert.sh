@@ -1438,7 +1438,7 @@ cmd_inspect() {
     printf "\r\e[KExporting Metadata... Done.\n"
 
     # 4. Analyze Statistics
-    start_spinner "Calculating Robust Peak (99.9th)... "
+    start_spinner "Calculating Peak Brightness (99.9th)... "
     
     # We want both the count ($c) and the peak ($a[idx])
     # Bug Fix: Use recursive search (..) to find Level1/l1/max_pq anywhere, matching Deep Scan logic.
@@ -1466,7 +1466,7 @@ cmd_inspect() {
     else
         robust_peak=0
     fi
-    printf "\r\e[KCalculating Robust Peak... Done.\n"
+    printf "\r\e[KCalculating Peak Brightness... Done.\n"
     
     # 5. Verdict Logic
     # 5. Verdict Logic
@@ -1509,14 +1509,16 @@ cmd_inspect() {
          advisory="${BOLD}ADVISORY:${RESET}\nFEL Peak ($robust_peak nits) is within safe range of Base Layer ($bl_peak nits).\nSafe to convert."
     fi
 
-    echo "Base Layer Peak (MDL):  ${bl_peak} nits"
-    echo "L1 Analysis:          ${frame_count} frames analyzed"
-    echo "FEL Peak Brightness:  ${robust_peak} nits"
+    printf "%-22s %s nits\n" "Base Layer Peak (MDL):" "${bl_peak}"
+    printf "%-22s %s frames analyzed\n" "L1 Analysis:" "${frame_count}"
+    printf "%-22s %s nits\n" "FEL Peak Brightness:" "${robust_peak}"
     
     if [ "$robust_peak" -gt "$threshold" ]; then
-         echo "Brightness Expansion: ${RED}+${diff} nits (Active)${RESET}"
+         printf "%-22s " "Brightness Expansion:"
+         echo -e "${RED}+${diff} nits (Active)${RESET}"
     else
-         echo "Brightness Expansion: ${GREEN}None (Safe)${RESET}"
+         printf "%-22s " "Brightness Expansion:"
+         echo -e "${GREEN}None (Safe)${RESET}"
     fi
 
     echo "---------------------------------------------------"
