@@ -181,7 +181,7 @@ This script discards the Enhancement Layer while retaining the RPU (dynamic meta
 
 **Recommendation:** For verified Complex FEL titles, it is better to watch the HDR10 base layer (or use a dedicated FEL-capable player like the **Ugoos AM6B+**) than to convert them to Profile 8.1.
 
-**Reference List:** If you want to cross-check the scan results of this script, refer to the [Official DoVi_Scripts FEL List](https://docs.google.com/spreadsheets/d/15i0a84uiBtWiHZ5CXZZ7wygLFXwYOd84/edit?gid=828864432#gid=828864432) (maintained by **RESET_9999**, author of DoVi_Scripts).
+**Reference List:** If you want to cross-check the scan results of this script, refer to the [Official DoVi_Scripts FEL List](https://docs.google.com/spreadsheets/d/15i0a84uiBtWiHZ5CXZZ7wygLFXwYOd84/edit?gid=828864432#gid=828864432) (maintained by **R3S3t999**, author of [DoVi_Scripts](https://github.com/R3S3t9999/DoVi_Scripts)).
 
 ### 2. Single Video Track Only
 The converted file will contain exactly one video track (the main movie). Secondary video streams (such as Picture-in-Picture commentary or Multi-Angle views) will be dropped because the conversion process isolates the main video track. All audio and subtitle tracks are preserved.
