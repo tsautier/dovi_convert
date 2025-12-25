@@ -902,6 +902,19 @@ cmd_convert() {
         fi
     fi
 
+    # Simple FEL Advisory
+    if [[ "$DOVI_STATUS" == *"FEL (Simple)"* ]]; then
+        echo -e "${YELLOW}[!] WARNING: This is a 'Simple FEL' file.${RESET}"
+        echo "    Deep scan found no active brightness expansion."
+        echo "    Use -inspect for a full RPU analysis if in doubt."
+        printf "Proceed with conversion? (y/N) "
+        read -r REPLY
+        if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
+            echo "Conversion cancelled."
+            return 1
+        fi
+    fi
+
     # Safety Check: Not Profile 7 (IGNORE) or Generic SKIP (e.g. No Video Track)
     # Note: SKIP (Complex FEL) is already handled above due to FEL_VERDICT check.
     # We check for generic SKIP (e.g. No Video Track) or IGNORE.

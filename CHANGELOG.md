@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Automatic Update Check:** The tool now silently checks for updates in the background without slowing down execution (Zero-Latency). If a new version is found, a notification is displayed on the *next* run.
 - **Manual Update Check:** Added `-update-check` command to manually check for the latest version and report status immediately.
 - **Dependencies:** Added `curl` to the list of required dependencies (standard on most systems).
+- **Simple FEL Warning:** The `-convert` command now prompts for confirmation when processing Simple FEL files to match the safety behavior of batch mode.
 
 ## [6.5.1] - 2025-12-24
 ### Added
