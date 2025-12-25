@@ -82,26 +82,35 @@ check_pkg_available() {
 install_dependencies() {
     local missing=("$@")
     local pm="" pm_install="" needs_sudo=false is_arch=false
+    local has_brew_fallback=false
     local installed=() failed=() manual=()
     
-    # Detect package manager
-    if command -v brew &>/dev/null; then
-        pm="brew"; pm_install="brew install"; needs_sudo=false
+    # Detect package manager (on Linux, prefer native over Homebrew)
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        # macOS: Homebrew only
+        if command -v brew &>/dev/null; then
+            pm="brew"; pm_install="brew install"; needs_sudo=false
+        else
+            echo -e "${YELLOW}Homebrew is not installed.${RESET}"
+            echo "It's the recommended way to install dependencies on macOS."
+            echo ""
+            echo "Install it from: https://brew.sh"
+            echo ""
+            echo "Then run dovi_convert again."
+            exit 1
+        fi
     elif command -v apt &>/dev/null; then
         pm="apt"; pm_install="sudo apt install -y"; needs_sudo=true
+        if command -v brew &>/dev/null; then has_brew_fallback=true; fi
     elif command -v dnf &>/dev/null; then
         pm="dnf"; pm_install="sudo dnf install -y"; needs_sudo=true
+        if command -v brew &>/dev/null; then has_brew_fallback=true; fi
     elif command -v pacman &>/dev/null; then
         pm="pacman"; pm_install="sudo pacman -S --noconfirm"; needs_sudo=true; is_arch=true
-    elif [[ "$OSTYPE" == "darwin"* ]]; then
-        # macOS without Homebrew
-        echo -e "${YELLOW}Homebrew is not installed.${RESET}"
-        echo "It's the recommended way to install dependencies on macOS."
-        echo ""
-        echo "Install it from: https://brew.sh"
-        echo ""
-        echo "Then run dovi_convert again."
-        exit 1
+        if command -v brew &>/dev/null; then has_brew_fallback=true; fi
+    elif command -v brew &>/dev/null; then
+        # Linux with only Homebrew (no native PM)
+        pm="brew"; pm_install="brew install"; needs_sudo=false
     else
         echo -e "${RED}Unsupported system.${RESET} Please install dependencies manually:"
         for dep in "${missing[@]}"; do echo "  - $dep"; done
@@ -124,6 +133,8 @@ install_dependencies() {
     
     for cmd in "${missing[@]}"; do
         local pkg=$(get_pkg_name "$cmd" "$pm")
+        local use_pm="$pm"
+        local use_pm_install="$pm_install"
         
         # Skip if we already installed this package
         if [[ " ${already_installed[*]} " =~ " ${pkg} " ]]; then
@@ -133,16 +144,32 @@ install_dependencies() {
         
         echo -n "[$idx/$total] Installing $cmd ($pkg)... "
         
-        # Check if package is available in repos
-        if ! check_pkg_available "$pkg" "$pm"; then
-            echo -e "${YELLOW}Not in repos.${RESET}"
-            manual+=("$cmd")
-            ((idx++))
-            continue
+        # Check if package is available in primary repos
+        if ! check_pkg_available "$pkg" "$use_pm"; then
+            # Not in native repos - try Homebrew fallback for dovi_tool on Linux
+            if [[ "$cmd" == "dovi_tool" ]] && [[ "$has_brew_fallback" == true ]]; then
+                local brew_pkg=$(get_pkg_name "$cmd" "brew")
+                if check_pkg_available "$brew_pkg" "brew"; then
+                    echo -n "(via Homebrew) "
+                    use_pm="brew"
+                    use_pm_install="brew install"
+                    pkg="$brew_pkg"
+                else
+                    echo -e "${YELLOW}Not in repos.${RESET}"
+                    manual+=("$cmd")
+                    ((idx++))
+                    continue
+                fi
+            else
+                echo -e "${YELLOW}Not in repos.${RESET}"
+                manual+=("$cmd")
+                ((idx++))
+                continue
+            fi
         fi
         
         # Attempt install
-        if $pm_install "$pkg" &>/dev/null; then
+        if $use_pm_install "$pkg" &>/dev/null; then
             echo -e "${GREEN}Done.${RESET}"
             installed+=("$cmd")
             already_installed+=("$pkg")
