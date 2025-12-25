@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v6.6)
+# dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v6.6.1)
 #
 # DESCRIPTION:
 #   Automates conversion of Dolby Vision Profile 7 MKV files (UHD Blu-ray)
@@ -22,7 +22,7 @@ AUTO_YES=false          # Toggled by -y
 INCLUDE_SIMPLE=false    # Toggled by -include-simple
 
 # App Data
-VERSION="6.6"
+VERSION="6.6.1"
 REPO_URL="https://api.github.com/repos/cryptochrome/dovi_convert/releases/latest"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/dovi_convert"
 UPDATE_FILE="$CACHE_DIR/latest_version"
@@ -879,22 +879,22 @@ get_video_details() {
         MI_INFO_STRING="MKVMERGE_FAIL"
         return
     fi
-    VIDEO_TRACK_ID=$(echo "$mkv_json" | jq -r '.tracks[] | select(.type=="video") | .id' | head -n 1)
+    VIDEO_TRACK_ID=$(echo "$mkv_json" | jq -r '.tracks // [] | .[] | select(.type=="video") | .id' | head -n 1)
 
     if [[ -z "$VIDEO_TRACK_ID" ]]; then
         MI_INFO_STRING="NO_TRACK"
         return
     fi
 
-    VIDEO_DELAY=$(echo "$mkv_json" | jq -r ".tracks[] | select(.id==$VIDEO_TRACK_ID) | .properties.minimum_timestamp // 0")
-    VIDEO_LANG=$(echo "$mkv_json" | jq -r ".tracks[] | select(.id==$VIDEO_TRACK_ID) | .properties.language // \"und\"")
-    VIDEO_NAME=$(echo "$mkv_json" | jq -r ".tracks[] | select(.id==$VIDEO_TRACK_ID) | .properties.track_name // empty")
+    VIDEO_DELAY=$(echo "$mkv_json" | jq -r ".tracks // [] | .[] | select(.id==$VIDEO_TRACK_ID) | .properties.minimum_timestamp // 0")
+    VIDEO_LANG=$(echo "$mkv_json" | jq -r ".tracks // [] | .[] | select(.id==$VIDEO_TRACK_ID) | .properties.language // \"und\"")
+    VIDEO_NAME=$(echo "$mkv_json" | jq -r ".tracks // [] | .[] | select(.id==$VIDEO_TRACK_ID) | .properties.track_name // empty")
 
     # 2. Get Dolby Profile
     local mi_json
     mi_json=$(mediainfo --Output=JSON "$file")
 
-    MI_INFO_STRING=$(echo "$mi_json" | jq -r '.media.track[] | select(.["@type"]=="Video") | "\(.HDR_Format) \(.HDR_Format_Profile) \(.CodecID)"' | tr '\n' ' ')
+    MI_INFO_STRING=$(echo "$mi_json" | jq -r '.media.track // [] | .[] | select(.["@type"]=="Video") | "\(.HDR_Format) \(.HDR_Format_Profile) \(.CodecID)"' | tr '\n' ' ')
 }
 
 # Part 2: Policy / Decision Making (Can start Deep Scan)
@@ -1349,7 +1349,7 @@ cmd_batch() {
         else
             ((skipped_count++))
         fi
-    done < <(find . -maxdepth "$max_depth" -name "*.mkv" -print0 | sort -z)
+    done < <(find . -maxdepth "$max_depth" -name "*.mkv" ! -name "._*" -print0 | sort -z)
 
     if [[ ${#conversion_queue[@]} -eq 0 && $complex_count -eq 0 ]]; then 
          echo "No Profile 7 files found (Ignored: $ignored_count)."
@@ -1805,7 +1805,7 @@ cmd_check_all() {
         fi
 
         printf "%-50s %-36b %b\n" "$name" "${DOVI_STATUS}" "${ACTION}"
-    done < <(find . -maxdepth "$max_depth" -name "*.mkv" -print0 | sort -z)
+    done < <(find . -maxdepth "$max_depth" -name "*.mkv" ! -name "._*" -print0 | sort -z)
 
     # 4. Conditional Advisory
     if [ "$simple_count" -gt 0 ]; then

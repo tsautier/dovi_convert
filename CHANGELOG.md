@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.6.1] - 2025-12-25
+### Fixed
+- Fixed `jq` errors when scanning directories containing macOS resource fork files (`._*.mkv`).
+- Scan commands now exclude resource fork files for cleaner output.
+- Made all JSON parsing null-safe to handle malformed or non-MKV files gracefully.
+
 ## [6.6] - 2025-12-25
 ### Added
 - **Automatic Update Check:** The tool now silently checks for updates in the background without slowing down execution (Zero-Latency). If a new version is found, a notification is displayed on the *next* run.
