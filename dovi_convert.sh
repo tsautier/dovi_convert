@@ -1788,7 +1788,7 @@ cmd_check_all() {
     echo -e "${CYAN}Running $scan_type $location...${RESET}"
     
     # 2. Print Table Header
-    printf "%-50s %-27s %s\n" "Filename" "Format" "Action"
+    printf "%-50s %-36s %s\n" "Filename" "Format" "Action"
     echo "------------------------------------------------------------------------------------------------"
     
     # 3. Iterate
@@ -1796,8 +1796,8 @@ cmd_check_all() {
     while IFS= read -r -d '' file; do
         analyze_file "$file"
         local name="${file#./}"; 
-        # Truncate filename (Strict 48 chars + '...')
-        if [ ${#name} -gt 48 ]; then name="${name:0:48}..."; fi
+        # Truncate filename (47 chars + '...' = 50 to fit column width)
+        if [ ${#name} -gt 50 ]; then name="${name:0:47}..."; fi
 
         # Track Simple FEL for footer
         if [[ "$DOVI_STATUS" == *"FEL (Simple)"* ]]; then
