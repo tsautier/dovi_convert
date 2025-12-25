@@ -183,6 +183,8 @@ This script discards the Enhancement Layer while retaining the RPU (dynamic meta
 
 **Reference List:** If you want to cross-check the scan results of this script, refer to the [Official DoVi_Scripts FEL List](https://docs.google.com/spreadsheets/d/15i0a84uiBtWiHZ5CXZZ7wygLFXwYOd84/edit?gid=828864432#gid=828864432) (maintained by **R3S3t999**, author of [DoVi_Scripts](https://github.com/R3S3t9999/DoVi_Scripts)).
 
+**Additional important caveat:** Some FEL titles contain reconstructive data beyond just luminance, such as film grain, noise, or color fixes. However, this tool assumes your playback device cannot handle FEL. While discarding the FEL means losing these specific visual enhancements, your device would be unable to display them regardless. This conversion ensures that you at least retain the critical Dolby Vision dynamic metadata.
+
 ### 2. Single Video Track Only
 The converted file will contain exactly one video track (the main movie). Secondary video streams (such as Picture-in-Picture commentary or Multi-Angle views) will be dropped because the conversion process isolates the main video track. All audio and subtitle tracks are preserved.
 *   **Note:** Your original file (containing all tracks) is preserved as a [filename].mkv.bak.dovi_convert backup, so no data is lost.

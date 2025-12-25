@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [6.6.1] - 2025-12-25
 ### Fixed
-- Fixed `jq` errors when scanning directories containing macOS resource fork files (`._*.mkv`).
-- Scan commands now exclude resource fork files for cleaner output.
-- Made all JSON parsing null-safe to handle malformed or non-MKV files gracefully.
+- Fixed `jq` errors when scanning directories containing macOS resource fork files.
+- Recursive scans now display filenames only (not folder paths) for cleaner output.
+- Scan commands now fully exclude macOS resource fork artifacts (`._*` files and folders).
 
 ## [6.6] - 2025-12-25
 ### Added

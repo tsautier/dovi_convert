@@ -1795,7 +1795,7 @@ cmd_check_all() {
     local simple_count=0
     while IFS= read -r -d '' file; do
         analyze_file "$file"
-        local name="${file#./}"; 
+        local name=$(basename -- "$file")
         # Truncate filename (47 chars + '...' = 50 to fit column width)
         if [ ${#name} -gt 50 ]; then name="${name:0:47}..."; fi
 
