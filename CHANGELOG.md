@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [6.6.1] - 2025-12-25
 ### Fixed
 - Fixed `jq` errors when scanning directories containing macOS resource fork files.
+- Fixed random "File not found" errors and corrupted filenames during recursive scans.
 - Recursive scans now display filenames only (not folder paths) for cleaner output.
 - Scan commands now fully exclude macOS resource fork artifacts (`._*` files and folders).
 

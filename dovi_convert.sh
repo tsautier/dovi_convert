@@ -477,9 +477,9 @@ check_fel_complexity() {
 
         # Extract 1 second of HEVC
         if [[ "$DEBUG_MODE" == true ]]; then
-            ffmpeg -analyzeduration 100M -probesize 100M -ss "$t" -i "$file" -map 0:v:0 -c:v copy -an -sn -dn -bsf:v hevc_mp4toannexb -f hevc -t 1 "$temp_hevc" >> dovi_convert_debug.log 2>&1
+            ffmpeg -analyzeduration 100M -probesize 100M -ss "$t" -i "$file" -map 0:v:0 -c:v copy -an -sn -dn -bsf:v hevc_mp4toannexb -f hevc -t 1 "$temp_hevc" >> dovi_convert_debug.log 2>&1 < /dev/null
         else
-            ffmpeg -v error -analyzeduration 100M -probesize 100M -ss "$t" -i "$file" -map 0:v:0 -c:v copy -an -sn -dn -bsf:v hevc_mp4toannexb -f hevc -t 1 "$temp_hevc" 2>/dev/null
+            ffmpeg -v error -analyzeduration 100M -probesize 100M -ss "$t" -i "$file" -map 0:v:0 -c:v copy -an -sn -dn -bsf:v hevc_mp4toannexb -f hevc -t 1 "$temp_hevc" 2>/dev/null < /dev/null
         fi
 
         if [[ ! -s "$temp_hevc" ]]; then rm -f "$temp_hevc"; continue; fi
@@ -1544,7 +1544,7 @@ cmd_inspect() {
     local pf_json="${pf_hevc}.json"
     local mel_detected=false
 
-    ffmpeg -v error -y -i "$file" -c:v copy -bsf:v hevc_mp4toannexb -f hevc -t 1 "$pf_hevc" 2>/dev/null
+    ffmpeg -v error -y -i "$file" -c:v copy -bsf:v hevc_mp4toannexb -f hevc -t 1 "$pf_hevc" 2>/dev/null < /dev/null
     if [[ -s "$pf_hevc" ]]; then
          dovi_tool extract-rpu "$pf_hevc" -o "$pf_rpu" >/dev/null 2>&1
          if [[ -s "$pf_rpu" ]]; then
