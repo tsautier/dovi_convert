@@ -213,3 +213,4 @@ If you are using the **Plex app on Apple TV 4K**, you will likely encounter a "F
 The Nvidia Shield is technically capable of handling Profile 7 FEL files on its own by stripping the Enhancement Layer (EL) and injecting the RPU (dynamic metadata) into the video in real-time (essentially what the dovi_convert script does).
 
 However, the Shield can struggle with this process, especially with high-bitrate content. This often results in stuttering or skipped frames. For Shield users, this script is a useful tool to perform this conversion offline, pre-stripping the EL and injecting the RPU to ensure smooth and reliable playback for problematic high-bitrate files.
+
