@@ -22,6 +22,9 @@ This document outlines the planned future development for `dovi_convert`.
     - Automatically detect films where the Enhancement Layer significantly impacts brightness.
     - Provide clear warnings or "Purist Grade" ratings during file scanning.
     - Helps identify titles where conversion might lead to suboptimal tone mapping.
+- [ ] **Custom Output Path**
+    - Support `-o /path` flag to write converted files to a different directory.
+    - Enables automation workflows (Automator, watch folders) without re-trigger issues.
 
 ## Docker & NAS Support
 ### Phase 1: The Container
