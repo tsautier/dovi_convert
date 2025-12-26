@@ -28,7 +28,7 @@ This document outlines the planned future development for `dovi_convert`.
 - [ ] **Official Docker Image**
     - Lightweight, plug-and-play container (Alpine Linux base).
     - Pre-packaged with all dependencies (ffmpeg, dovi_tool, mkvtoolnix).
-    - Ready for Unraid, TrueNAS, and Synology.
+    - Should work on any NAS supporting Docker (e.g. Unraid, TrueNAS, Synology, QNAP, etc.)
     - Automated builds via GitHub Actions (Docker Hub & GHCR).
 
 ### Phase 2: Web Interface (WebUI)
