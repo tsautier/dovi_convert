@@ -10,7 +10,7 @@
 # =============================================================================
 
 # --- Configuration & Constants ---
-BOLD="\033[1m"; RED="\033[31m"; GREEN="\033[32m"; YELLOW="\033[33m"; CYAN="\033[36m"; RESET="\033[0m"
+BOLD="\033[1m"; RED="\033[31m"; GREEN="\033[32m"; YELLOW="\033[33m"; CYAN="\033[36m"; DEFAULT="\033[39m"; RESET="\033[0m"
 
 # Default Runtime Flags
 DEBUG_MODE=false        # Toggled by -debug
@@ -944,7 +944,7 @@ determine_action() {
         fi
 
     elif [[ "$MI_INFO_STRING" == *"dvhe.08"* ]] || [[ "$MI_INFO_STRING" == *"Profile 8"* ]]; then
-        DOVI_STATUS="DV Profile 8.1"; ACTION="IGNORE"
+        DOVI_STATUS="${DEFAULT}DV Profile 8.1${RESET}"; ACTION="IGNORE"
     elif [[ "$MI_INFO_STRING" == *"dvhe.05"* ]] || [[ "$MI_INFO_STRING" == *"Profile 5"* ]]; then
         DOVI_STATUS="${YELLOW}DV Profile 5 (Stream)${RESET}"; ACTION="IGNORE"
     elif [[ "$MI_INFO_STRING" == *"Dolby Vision"* ]]; then
@@ -952,13 +952,13 @@ determine_action() {
     else
         # Granular Detection
         if [[ "$MI_INFO_STRING" == *"2094"* ]]; then
-            DOVI_STATUS="HDR10+"
+            DOVI_STATUS="${DEFAULT}HDR10+${RESET}"
         elif [[ "$MI_INFO_STRING" == *"HLG"* ]] || [[ "$MI_INFO_STRING" == *"Hybrid Log Gamma"* ]]; then
-            DOVI_STATUS="HLG"
+            DOVI_STATUS="${DEFAULT}HLG${RESET}"
         elif [[ "$MI_INFO_STRING" == *"2086"* ]] || [[ "$MI_INFO_STRING" == *"HDR10"* ]]; then
-            DOVI_STATUS="HDR10"
+            DOVI_STATUS="${DEFAULT}HDR10${RESET}"
         else
-            DOVI_STATUS="SDR"
+            DOVI_STATUS="${DEFAULT}SDR${RESET}"
         fi
         ACTION="IGNORE"
     fi
