@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v6.6.1)
+# dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v6.6.2)
 #
 # DESCRIPTION:
 #   Automates conversion of Dolby Vision Profile 7 MKV files (UHD Blu-ray)
@@ -22,7 +22,7 @@ AUTO_YES=false          # Toggled by -y
 INCLUDE_SIMPLE=false    # Toggled by -include-simple
 
 # App Data
-VERSION="6.6.1"
+VERSION="6.6.2"
 REPO_URL="https://api.github.com/repos/cryptochrome/dovi_convert/releases/latest"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/dovi_convert"
 UPDATE_FILE="$CACHE_DIR/latest_version"
@@ -671,7 +671,7 @@ print_metrics() {
     echo "---------------------------------------------------"
 }
 
-# Concise usage guide
+# Quick Help (Displayed when running dovi_convert without arguments)
 print_usage() {
     echo -e "${BOLD}dovi_convert v${VERSION}${RESET}"
     echo "Usage:"
@@ -702,6 +702,14 @@ print_help() {
     echo "  into Profile 8.1. This ensures compatibility with devices that do not support the"
     echo "  Enhancement Layer (Apple TV 4K, Shield, etc.), preventing fallback to HDR10."
     echo ""
+    echo -e "${BOLD}THE CONVERSION${RESET}"
+    echo "  The conversion process strips the Enhancement Layer (EL) from the video while"
+    echo "  injecting the RPU (dynamic metadata) into the base layer. This creates a"
+    echo "  Profile 8.1 compatible file. All audio and subtitle tracks are preserved."
+    echo ""
+    echo -e "  ${BOLD}Single File${RESET}: Convert individual files with full control."
+    echo -e "  ${BOLD}Batch Mode${RESET}: Recursively scans directories and batch-converts files."
+    echo ""
     echo -e "${BOLD}MODES OF OPERATION${RESET}"
     echo -e "  ${BOLD}1. Standard Mode (Default)${RESET}"
     echo "     Pipes the video stream directly into the conversion tool."
@@ -713,20 +721,24 @@ print_help() {
     echo "     'Seamless Branching' structures (common on Disney/Marvel discs)."
     echo "     The tool will automatically offer this mode if Standard conversion fails."
     echo ""
-    echo -e "${BOLD}FEL HANDLING (DEEP SCAN)${RESET}"
-    echo "  The tool automatically performs a 'Deep Scan' on all Profile 7 files."
-    echo "  It analyzes the RPU metadata to distinguish between:"
-    echo -e "  1. ${GREEN}Simple FEL / MEL${RESET}: No active brightness expansion detected. Likely safe to convert. (Default)"
-    echo -e "  2. ${RED}Complex FEL${RESET}: Expands luminance beyond base layer luminance."
-    echo "     Converting these files discards brightness data and will lead to incorrect"
-    echo "     tone mapping. The tool will automatically skip these files."
+    echo -e "${BOLD}FILE SCANNING & ANALYSIS${RESET}"
+    echo -e "  ${BOLD}Default Scan${RESET}"
+    echo "    When scanning MKV files, the tool first identifies the video format (HDR10,"
+    echo "    Dolby Vision Profile, etc.). For Profile 7 files with FEL, it analyzes the"
+    echo "    RPU metadata to distinguish between:"
+    echo -e "    1. ${GREEN}Simple FEL / MEL${RESET}: No active brightness expansion detected. Likely safe to convert."
+    echo -e "    2. ${RED}Complex FEL${RESET}: Expands luminance beyond base layer. Conversion skipped."
+    echo ""
+    echo -e "  ${BOLD}Inspection (Manual)${RESET}"
+    echo "    For a definitive analysis, a dedicated inspection mode is available."
+    echo "    It reads the entire file frame-by-frame to verify whether brightness"
+    echo "    expansion is present in the FEL. Use this to verify Simple FEL verdicts,"
+    echo "    or if you want absolute certainty."
     echo ""
     echo -e "${BOLD}AUTOMATIC BACKUPS${RESET}"
     echo "  The tool automatically preserves your original file before any modification."
     echo "  It uses a specific naming convention to distinguish its backups from your own files."
     echo -e "  Backup File: ${CYAN}[filename].mkv.bak.dovi_convert${RESET}"
-    echo ""
-    echo "  The -cleanup command will ONLY target files with this specific extension."
     echo ""
     echo -e "${BOLD}KNOWN LIMITATION: Single Video Track${RESET}"
     echo -e "  The ${BOLD}converted${RESET} file will contain exactly one video track (the main movie)."
@@ -739,12 +751,13 @@ print_help() {
     echo -e "${BOLD}COMMANDS${RESET}"
     echo ""
     echo -e "  ${BOLD}-check [file]${RESET}"
-    echo "       Analyze the Dolby Vision profile of a file."
+    echo "       Scan files to identify video format and conversion candidates."
+    echo "       Detects HDR formats and analyzes Profile 7 files for FEL complexity."
+    echo ""
     echo "       If [file] is omitted, scans all MKV files in the current directory."
-    echo "       Perfoms Deep Scan by default."
     echo ""
     echo "       Options:"
-    echo -e "         ${BOLD}-r${RESET}       Recursive scan (Default depth: 5 levels. Specify number to increase)."
+    echo -e "         ${BOLD}-r [depth]${RESET}   Scan subdirectories recursively. Default depth: 5. Example: -r 2"
     echo ""
     echo -e "  ${BOLD}-convert [file]${RESET}"
     echo "       Converts a single file to Profile 8.1."
@@ -755,9 +768,11 @@ print_help() {
     echo -e "         ${BOLD}-force${RESET}   Override 'Complex FEL' detection."
     echo ""
     echo -e "  ${BOLD}-inspect [file]${RESET}"
-    echo "       Inspects full RPU structure to verify brightness metadata."
-    echo "       Compares Peak Brightness in RPU vs Base Layer to detect active expansion."
-    echo "       Use this to verify 'Complex FEL' verdicts. (Slow: Reads entire file)."
+    echo "       Full frame-by-frame inspection of brightness metadata."
+    echo "       Verifies whether the FEL contains active brightness expansion."
+    echo "       Use this to verify Simple FEL verdicts, or if you want absolute certainty."
+    echo ""
+    echo "       Note: Reads entire file. Slower than the default scan."
     echo ""
     echo "       Options:"
     echo -e "         ${BOLD}-safe${RESET}    Force Safe Mode (Disk Extraction fallback)."
@@ -778,11 +793,10 @@ print_help() {
     echo ""
     echo "       Options:"
     echo -e "         ${BOLD}-r${RESET}       Recursive scan."
-    echo -e "         ${BOLD}-r${RESET}       Recursive scan."
     echo -e "         ${BOLD}-y${RESET}       Skip confirmation prompts."
     echo ""
     echo -e "  ${BOLD}-update-check${RESET}"
-    echo "       Checks GitHub permissions for the latest release."
+    echo "       Checks if a newer version of dovi_convert is available."
     echo ""
     echo -e "${BOLD}OPTION DETAILS${RESET}"
     echo ""
@@ -790,6 +804,12 @@ print_help() {
     echo -e "       ${RED}Force Conversion.${RESET}"
     echo "       Overrides the 'Complex FEL' detection. Use this if you want to convert"
     echo "       a Complex FEL file despite the potential loss of brightness data."
+    echo ""
+
+    echo -e "  ${BOLD}-include-simple${RESET} [Batch]"
+    echo -e "       ${YELLOW}Auto-Include Simple FEL.${RESET}"
+    echo "       When using -y (Auto-Yes), Simple FEL files are normally skipped to allow"
+    echo "       manual review. This flag includes them in batch conversions."
     echo ""
 
     echo -e "  ${BOLD}-safe${RESET}  [Convert, Batch]"
@@ -838,7 +858,7 @@ cleanup_and_exit() {
     # Handle User Interrupt (Ctrl+C)
     if [[ $exit_code -eq 130 ]]; then
         echo -e "\n${YELLOW}[!] Process Interrupted by User.${RESET}"
-        echo -e "${YELLOW}[!] Cleaning up incomplete files... Done.${RESET}"
+        echo -e "${YELLOW}[!] Cleaning up temporary files... Done.${RESET}"
         if [[ "$BATCH_RUNNING" == true ]] || [[ -n "$backup_mkv" && -f "$backup_mkv" ]]; then
              echo -e "${GREEN}[✓] Original Source file is safe and untouched.${RESET}"
         fi
@@ -1762,7 +1782,7 @@ cmd_check_single() {
     if [[ "$DOVI_STATUS" == *"FEL (Simple)"* ]]; then
         echo ""
         echo "================================================================================================"
-        echo -e "${BOLD}*ADVISORY: UNDERSTANDING 'SIMPLE' (CYAN) VERDICTS${RESET}"
+        echo -e "${CYAN}*${RESET}${BOLD}ADVISORY: UNDERSTANDING 'SIMPLE' (CYAN) VERDICTS${RESET}"
         echo "------------------------------------------------------------------------------------------------"
         echo -e "${BOLD}What is 'Simple FEL'?${RESET}"
         echo "It means the deep scan detected no active brightness expansion over the Base Layer. This"
@@ -1812,7 +1832,7 @@ cmd_check_all() {
     if [ "$simple_count" -gt 0 ]; then
         echo ""
         echo "================================================================================================"
-        echo -e "${BOLD}*ADVISORY: UNDERSTANDING 'SIMPLE' (CYAN) VERDICTS${RESET}"
+        echo -e "${CYAN}*${RESET}${BOLD}ADVISORY: UNDERSTANDING 'SIMPLE' (CYAN) VERDICTS${RESET}"
         echo "------------------------------------------------------------------------------------------------"
         echo -e "${BOLD}What is 'Simple FEL'?${RESET}"
         echo "It means the deep scan detected no active brightness expansion over the Base Layer. This"

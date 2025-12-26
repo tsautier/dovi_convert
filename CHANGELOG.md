@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.6.2] - 2025-12-26
+### Changed
+- Cleanup release: Updated internal help text to better reflect features and changes from recent versions.
+
 ## [6.6.1] - 2025-12-25
 ### Fixed
 - Fixed `jq` errors when scanning directories containing macOS resource fork files.
