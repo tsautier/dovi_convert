@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v6.6.2)
+# dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v6.6.3)
 #
 # DESCRIPTION:
 #   Automates conversion of Dolby Vision Profile 7 MKV files (UHD Blu-ray)
@@ -22,7 +22,7 @@ AUTO_YES=false          # Toggled by -y
 INCLUDE_SIMPLE=false    # Toggled by -include-simple
 
 # App Data
-VERSION="6.6.2"
+VERSION="6.6.3"
 REPO_URL="https://api.github.com/repos/cryptochrome/dovi_convert/releases/latest"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/dovi_convert"
 UPDATE_FILE="$CACHE_DIR/latest_version"
@@ -1136,15 +1136,21 @@ cmd_convert() {
     fi
 
     # Simple FEL Advisory
+    # In batch mode with -include-simple, the user has pre-acknowledged the risk.
+    # Skip the per-file prompt to enable true automation.
     if [[ "$DOVI_STATUS" == *"FEL (Simple)"* ]]; then
-        echo -e "${YELLOW}[!] WARNING: This is a 'Simple FEL' file.${RESET}"
-        echo "    Deep scan found no active brightness expansion."
-        echo "    Use -inspect for a full RPU analysis if in doubt."
-        printf "Proceed with conversion? (y/N) "
-        read -r REPLY
-        if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
-            echo "Conversion cancelled."
-            return 1
+        if [[ "$BATCH_RUNNING" == true ]] && [[ "$INCLUDE_SIMPLE" == true ]]; then
+            echo -e "${CYAN}[i] Simple FEL: Included via -include-simple flag.${RESET}"
+        else
+            echo -e "${YELLOW}[!] WARNING: This is a 'Simple FEL' file.${RESET}"
+            echo "    Deep scan found no active brightness expansion."
+            echo "    Use -inspect for a full RPU analysis if in doubt."
+            printf "Proceed with conversion? (y/N) "
+            read -r REPLY
+            if [[ ! "$REPLY" =~ ^[Yy]$ ]]; then
+                echo "Conversion cancelled."
+                return 1
+            fi
         fi
     fi
 
