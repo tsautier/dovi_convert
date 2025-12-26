@@ -9,10 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Fixed `jq` errors when scanning directories containing macOS resource fork files.
 - Fixed random "File not found" errors and corrupted filenames during recursive scans.
-- Recursive scans now display filenames only (not folder paths) for cleaner output.
 - Scan commands now fully exclude macOS resource fork artifacts (`._*` files and folders).
 
+### Changed
+- Improved color theme of the -check output to better distinguish between different file types.
+- Recursive scans now display filenames only (not folder paths) for cleaner output.
+
 ## [6.6] - 2025-12-25
+
 ### Added
 - **Automatic Update Check:** The tool now silently checks for updates in the background without slowing down execution (Zero-Latency). If a new version is found, a notification is displayed on the *next* run.
 - **Manual Update Check:** Added `-update-check` command to manually check for the latest version and report status immediately.

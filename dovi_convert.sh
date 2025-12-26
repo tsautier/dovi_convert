@@ -345,8 +345,8 @@ cmd_update_check_manual() {
         return 1
     fi
     
-    echo "Latest Version:  $latest_tag"
-    echo "Current Version: v$VERSION"
+    echo "Latest version on GitHub: $latest_tag"
+    echo "Installed version:        v$VERSION"
     
      if version_gt "$latest_tag" "$VERSION"; then
          echo -e "\n${GREEN}Update Available!${RESET}"
@@ -926,38 +926,39 @@ determine_action() {
         if [ "$FEL_VERDICT" == "COMPLEX" ]; then
             DOVI_STATUS="${RED}DV Profile 7 FEL (Complex)${RESET}"
             if [ "$FORCE_MODE" = true ]; then
-                ACTION="CONVERT (FORCED)"
+                ACTION="${RED}CONVERT (FORCED)${RESET}"
             else
-                ACTION="SKIP (Complex FEL)"
+                ACTION="${RED}SKIP (Complex FEL)${RESET}"
             fi
         elif [ "$FEL_VERDICT" == "SAFE" ]; then
             if [[ "$FEL_REASON" == *"MEL"* ]]; then
                  DOVI_STATUS="${GREEN}DV Profile 7 MEL (Safe)${RESET}"
+                 ACTION="${GREEN}CONVERT${RESET}"
             else
                  DOVI_STATUS="${CYAN}DV Profile 7 FEL (Simple)${RESET}" # Cyan for Statistical Safety
+                 ACTION="${CYAN}CONVERT*${RESET}"
             fi
-            ACTION="${GREEN}CONVERT${RESET}"
         else
             DOVI_STATUS="${YELLOW}DV Profile 7 (Check Failed)${RESET}"
-            ACTION="MANUAL CHECK"
+            ACTION="${YELLOW}MANUAL CHECK${RESET}"
         fi
 
     elif [[ "$MI_INFO_STRING" == *"dvhe.08"* ]] || [[ "$MI_INFO_STRING" == *"Profile 8"* ]]; then
-        DOVI_STATUS="${CYAN}DV Profile 8.1${RESET}"; ACTION="IGNORE"
+        DOVI_STATUS="DV Profile 8.1"; ACTION="IGNORE"
     elif [[ "$MI_INFO_STRING" == *"dvhe.05"* ]] || [[ "$MI_INFO_STRING" == *"Profile 5"* ]]; then
         DOVI_STATUS="${YELLOW}DV Profile 5 (Stream)${RESET}"; ACTION="IGNORE"
     elif [[ "$MI_INFO_STRING" == *"Dolby Vision"* ]]; then
-        DOVI_STATUS="${RED}DV Unknown Profile${RESET}"; ACTION="CONVERT"
+        DOVI_STATUS="${YELLOW}DV Unknown Profile${RESET}"; ACTION="IGNORE"
     else
         # Granular Detection
         if [[ "$MI_INFO_STRING" == *"2094"* ]]; then
-            DOVI_STATUS="${CYAN}HDR10+${RESET}"
+            DOVI_STATUS="HDR10+"
         elif [[ "$MI_INFO_STRING" == *"HLG"* ]] || [[ "$MI_INFO_STRING" == *"Hybrid Log Gamma"* ]]; then
-            DOVI_STATUS="${CYAN}HLG${RESET}"
+            DOVI_STATUS="HLG"
         elif [[ "$MI_INFO_STRING" == *"2086"* ]] || [[ "$MI_INFO_STRING" == *"HDR10"* ]]; then
-            DOVI_STATUS="${CYAN}HDR10${RESET}"
+            DOVI_STATUS="HDR10"
         else
-            DOVI_STATUS="${CYAN}SDR${RESET}"
+            DOVI_STATUS="SDR"
         fi
         ACTION="IGNORE"
     fi
@@ -1811,7 +1812,7 @@ cmd_check_all() {
     if [ "$simple_count" -gt 0 ]; then
         echo ""
         echo "================================================================================================"
-        echo -e "${BOLD}ADVISORY: UNDERSTANDING 'SIMPLE' (CYAN) VERDICTS${RESET}"
+        echo -e "${BOLD}*ADVISORY: UNDERSTANDING 'SIMPLE' (CYAN) VERDICTS${RESET}"
         echo "------------------------------------------------------------------------------------------------"
         echo -e "${BOLD}What is 'Simple FEL'?${RESET}"
         echo "It means the deep scan detected no active brightness expansion over the Base Layer. This strongly"
