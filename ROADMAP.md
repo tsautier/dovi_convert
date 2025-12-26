@@ -3,7 +3,7 @@
 This document outlines the planned future development for `dovi_convert`.
 *Note: This roadmap is subject to change based on user feedback and technical feasibility.*
 
-## Rewrite in Pything
+## Rewrite in Python
 - What started as a simple idea to quickly convert Dolby Vision files to Profile 7 has now turned into a 2000-line Bash script.
 - Not ideal. 
 - Before implementing any new features (see below), the next big project is to completely re-write everything in Python.
