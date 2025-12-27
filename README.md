@@ -66,6 +66,8 @@ This script works on:
 
 **macOS Prerequisite:** [Homebrew](https://brew.sh) is required for automatic dependency installation.
 
+> **Important:** On macOS, use CLI versions of dependencies installed via [Homebrew](https://brew.sh) or [MacPorts](https://www.macports.org/). GUI app bundles (e.g., MKVToolNix.app, MediaInfo.app) may not work.
+
 *   [ffmpeg](https://ffmpeg.org/download.html)
 *   [dovi_tool](https://github.com/quietvoid/dovi_tool/releases)
 *   [MKVToolNix](https://mkvtoolnix.download/downloads.html)
