@@ -87,18 +87,8 @@ install_dependencies() {
     
     # Detect package manager (on Linux, prefer native over Homebrew)
     if [[ "$OSTYPE" == "darwin"* ]]; then
-        # macOS: Homebrew only
-        if command -v brew &>/dev/null; then
-            pm="brew"; pm_install="brew install"; needs_sudo=false
-        else
-            echo -e "${YELLOW}Homebrew is not installed.${RESET}"
-            echo "It's the recommended way to install dependencies on macOS."
-            echo ""
-            echo "Install it from: https://brew.sh"
-            echo ""
-            echo "Then run dovi_convert again."
-            exit 1
-        fi
+        # macOS: Homebrew only (checked before calling this function)
+        pm="brew"; pm_install="brew install"; needs_sudo=false
     elif command -v apt &>/dev/null; then
         pm="apt"; pm_install="sudo apt install -y"; needs_sudo=true
         if command -v brew &>/dev/null; then has_brew_fallback=true; fi
@@ -207,7 +197,10 @@ install_dependencies() {
                 if [[ "$is_arch" == true ]]; then
                     echo "  AUR:    https://aur.archlinux.org/packages/dovi_tool-bin"
                 fi
-                echo "  GitHub: https://github.com/quietvoid/dovi_tool/releases"
+                echo "  GitHub: https://github.com/quietvoid/dovi_tool"
+                echo ""
+                echo "Tip: Install Homebrew (https://brew.sh) - a universal package manager."
+                echo "     Once installed, dovi_convert will use it to install dovi_tool automatically."
             else
                 echo "$dep must be installed manually using your package manager."
             fi
@@ -243,17 +236,34 @@ if [[ ${#MISSING_DEPS[@]} -gt 0 ]]; then
     read -r REPLY
     
     if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+        # macOS requires Homebrew for auto-installation
+        if [[ "$OSTYPE" == "darwin"* ]] && ! command -v brew &>/dev/null; then
+            echo ""
+            echo -e "${YELLOW}Homebrew is not installed.${RESET}"
+            echo "It's the recommended way to install dependencies on macOS."
+            echo ""
+            echo "Install it from: https://brew.sh"
+            echo ""
+            echo "Then run dovi_convert again."
+            exit 1
+        fi
         install_dependencies "${MISSING_DEPS[@]}"
     else
         echo ""
         echo "Please install the missing dependencies manually:"
         for dep in "${MISSING_DEPS[@]}"; do
             if [[ "$dep" == "dovi_tool" ]]; then
-                echo "  - dovi_tool: https://github.com/quietvoid/dovi_tool/releases"
+                echo "  - dovi_tool: https://github.com/quietvoid/dovi_tool"
             else
                 echo "  - $dep"
             fi
         done
+        # Suggest Homebrew on macOS
+        if [[ "$OSTYPE" == "darwin"* ]] && ! command -v brew &>/dev/null; then
+            echo ""
+            echo "Tip: Install Homebrew (https://brew.sh) - a universal package manager."
+            echo "     Once installed, dovi_convert will use it to install dependencies automatically."
+        fi
         exit 1
     fi
 fi

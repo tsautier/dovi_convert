@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+### Fixed
+- macOS no longer requires Homebrew if all dependencies are already installed.
+
+### Changed
+- dovi_tool install instructions now link to main repo page instead of releases.
+- Added Homebrew suggestions during dependency check for users without it installed.
+
 ## [6.6.3] - 2025-12-26
 ### Fixed
 - Fixed `-include-simple` flag not suppressing per-file Simple FEL prompts during batch runs (Fixes #5).
