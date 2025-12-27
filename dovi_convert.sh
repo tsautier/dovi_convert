@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v6.6.3)
+# dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v6.6.4)
 #
 # DESCRIPTION:
 #   Automates conversion of Dolby Vision Profile 7 MKV files (UHD Blu-ray)
@@ -22,7 +22,7 @@ AUTO_YES=false          # Toggled by -y
 INCLUDE_SIMPLE=false    # Toggled by -include-simple
 
 # App Data
-VERSION="6.6.3"
+VERSION="6.6.4"
 REPO_URL="https://api.github.com/repos/cryptochrome/dovi_convert/releases/latest"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/dovi_convert"
 UPDATE_FILE="$CACHE_DIR/latest_version"
@@ -404,7 +404,7 @@ pq_to_nits() {
 }
 
 # ------------------------------------------------------------------------------
-# DEEP SCAN ANALYZER
+# FEL ANALYZER
 # ------------------------------------------------------------------------------
 
 # Analyzes the RPU of a file to detect "Active Reconstruction" (Complex FEL).
@@ -477,7 +477,7 @@ check_fel_complexity() {
     local threshold=$(( bl_peak + 50 ))
 
     if [[ "$DEBUG_MODE" == true ]]; then
-         echo "[Deep Scan Debug] Base Layer Peak: $bl_peak nits (Threshold: $threshold)" >> dovi_convert_debug.log
+         echo "[Scan Debug] Base Layer Peak: $bl_peak nits (Threshold: $threshold)" >> dovi_convert_debug.log
     fi
 
     for t in "${timestamps[@]}"; do
@@ -535,8 +535,8 @@ check_fel_complexity() {
              # Debug logging if extraction fails
              if [[ -z "$l1_max" || "$l1_max" == "null" ]]; then
                  if [[ "$DEBUG_MODE" == true ]]; then
-                     echo "[Deep Scan Debug] Probe @ ${t}s : L1 Extraction Failed via jq." >> dovi_convert_debug.log
-                     echo "[Deep Scan Debug] JSON Start: $(head -c 200 "$temp_json")" >> dovi_convert_debug.log
+                     echo "[Scan Debug] Probe @ ${t}s : L1 Extraction Failed via jq." >> dovi_convert_debug.log
+                     echo "[Scan Debug] JSON Start: $(head -c 200 "$temp_json")" >> dovi_convert_debug.log
                  fi
                  l1_max=""
              fi
@@ -560,7 +560,7 @@ check_fel_complexity() {
              local l1_nits=$(pq_to_nits "$l1_max")
              
              if [[ "$DEBUG_MODE" == true ]]; then
-                  echo "[Deep Scan Debug] Probe @ ${t}s : L1 Raw=$l1_max -> ${l1_nits} nits vs Threshold=$threshold (BL=$bl_peak)" >> dovi_convert_debug.log
+                  echo "[Scan Debug] Probe @ ${t}s : L1 Raw=$l1_max -> ${l1_nits} nits vs Threshold=$threshold (BL=$bl_peak)" >> dovi_convert_debug.log
              fi
 
              if (( l1_nits > threshold )); then
@@ -569,7 +569,7 @@ check_fel_complexity() {
                  break
              fi
         elif [[ "$DEBUG_MODE" == true ]]; then
-             echo "[Deep Scan Debug] Probe @ ${t}s : No L1 Found." >> dovi_convert_debug.log
+             echo "[Scan Debug] Probe @ ${t}s : No L1 Found." >> dovi_convert_debug.log
         fi
     done
 
@@ -686,8 +686,8 @@ print_usage() {
     echo -e "${BOLD}dovi_convert v${VERSION}${RESET}"
     echo "Usage:"
     echo -e "  ${BOLD}dovi_convert -help                   : SHOW DETAILED MANUAL & EXAMPLES${RESET}"
-    echo "  dovi_convert -check                  : Analyze all MKV files in current directory."
-    echo "  dovi_convert -check   [file]         : Analyze profile of a specific file."
+    echo "  dovi_convert -scan                   : Scan all MKV files in current directory."
+    echo "  dovi_convert -scan    [file]         : Scan a specific file."
     echo "  dovi_convert -inspect [file] [-safe] : Inspect full RPU structure (Active Brightness Check)."
     echo "  dovi_convert -convert [file]         : Convert a file to DV Profile 8.1."
     echo "  dovi_convert -convert [file] -safe   : Convert using Safe Mode (Disk Extraction)."
@@ -760,7 +760,7 @@ print_help() {
     echo ""
     echo -e "${BOLD}COMMANDS${RESET}"
     echo ""
-    echo -e "  ${BOLD}-check [file]${RESET}"
+    echo -e "  ${BOLD}-scan [file]${RESET}  (alias: -check)"
     echo "       Scan files to identify video format and conversion candidates."
     echo "       Detects HDR formats and analyzes Profile 7 files for FEL complexity."
     echo ""
@@ -927,7 +927,7 @@ get_video_details() {
     MI_INFO_STRING=$(echo "$mi_json" | jq -r '.media.track // [] | .[] | select(.["@type"]=="Video") | "\(.HDR_Format) \(.HDR_Format_Profile) \(.CodecID)"' | tr '\n' ' ')
 }
 
-# Part 2: Policy / Decision Making (Can start Deep Scan)
+# Part 2: Policy / Decision Making (Triggers FEL Analysis)
 determine_action() {
     local file="$1"
     # Requires get_video_details to have run first
@@ -950,7 +950,7 @@ determine_action() {
     if [[ "$MI_INFO_STRING" == *"dvhe.07"* ]] || [[ "$MI_INFO_STRING" == *"Profile 7"* ]]; then
         # PROFILE 7 DETECTED
         
-        # DEEP SCAN (Always runs now, -quick removed)
+        # FEL ANALYSIS (Always runs now)
         check_fel_complexity "$file"
         
         if [ "$FEL_VERDICT" == "COMPLEX" ]; then
@@ -1153,7 +1153,7 @@ cmd_convert() {
             echo -e "${CYAN}[i] Simple FEL: Included via -include-simple flag.${RESET}"
         else
             echo -e "${YELLOW}[!] WARNING: This is a 'Simple FEL' file.${RESET}"
-            echo "    Deep scan found no active brightness expansion."
+            echo "    Scan found no active brightness expansion."
             echo "    Use -inspect for a full RPU analysis if in doubt."
             printf "Proceed with conversion? (y/N) "
             read -r REPLY
@@ -1690,7 +1690,7 @@ cmd_inspect() {
     start_spinner "Calculating Peak Brightness (99.9th)... "
     
     # We want both the count ($c) and the peak ($a[idx])
-    # Bug Fix: Use recursive search (..) to find Level1/l1/max_pq anywhere, matching Deep Scan logic.
+    # Bug Fix: Use recursive search (..) to find Level1/l1/max_pq anywhere, matching scan logic.
     local stats_output
     stats_output=$(jq -r '[.. | .Level1? // .l1? | .max_pq? // .max? // empty] | map(select(. != null)) | .[]' "$temp_json" 2>/dev/null | sort -n | awk '
       BEGIN {c=0}
@@ -1801,10 +1801,10 @@ cmd_check_single() {
         echo -e "${CYAN}*${RESET}${BOLD}ADVISORY: UNDERSTANDING 'SIMPLE' (CYAN) VERDICTS${RESET}"
         echo "------------------------------------------------------------------------------------------------"
         echo -e "${BOLD}What is 'Simple FEL'?${RESET}"
-        echo "It means the deep scan detected no active brightness expansion over the Base Layer. This"
+        echo "It means the scan detected no active brightness expansion over the Base Layer. This"
         echo "suggests the file is likely safe to convert. But:"
         echo ""
-        echo -e "${BOLD}How accurate is the deep scan?${RESET}"
+        echo -e "${BOLD}How accurate is the scan?${RESET}"
         echo "The script takes 10 samples at different timestamps of the video to analyze peak brightness in"
         echo "the FEL. While this is statistically accurate enough to determine whether the FEL expands luminance"
         echo "over the Base Layer, it can't guarantee a definitive result. If accurate preservation is paramount"
@@ -1817,7 +1817,7 @@ cmd_check_all() {
     local max_depth="${1:-1}"
     
     # 1. Build Header Message
-    local scan_type="Deep Scan"
+    local scan_type="Scanning"
     
     local location="in current directory"
     if [[ "$max_depth" -gt 1 ]]; then location="recursively ($max_depth levels deep)"; fi
@@ -1851,10 +1851,10 @@ cmd_check_all() {
         echo -e "${CYAN}*${RESET}${BOLD}ADVISORY: UNDERSTANDING 'SIMPLE' (CYAN) VERDICTS${RESET}"
         echo "------------------------------------------------------------------------------------------------"
         echo -e "${BOLD}What is 'Simple FEL'?${RESET}"
-        echo "It means the deep scan detected no active brightness expansion over the Base Layer. This"
+        echo "It means the scan detected no active brightness expansion over the Base Layer. This"
         echo "suggests the file is likely safe to convert. But:"
         echo ""
-        echo -e "${BOLD}How accurate is the deep scan?${RESET}"
+        echo -e "${BOLD}How accurate is the scan?${RESET}"
         echo "The script takes 10 samples at different timestamps of the video to analyze peak brightness in"
         echo "the FEL. While this is statistically accurate enough to determine whether the FEL expands luminance"
         echo "over the Base Layer, it can't guarantee a definitive result. If accurate preservation is paramount"
@@ -1902,7 +1902,7 @@ COMMAND="$1"
 shift
 
 case "$COMMAND" in
-    -check)
+    -check|-scan)
         if [[ "$1" == "-r" ]]; then
             shift
             # If next arg is a number, use it as depth. Otherwise default to 5.

@@ -18,7 +18,7 @@ Converting Dolby Vision Profile 7 with FEL to Profile 8 is always a compromise. 
 - [Dependencies](#dependencies)
 - [Installation](#installation)
 - [Usage](#usage)
-    - [1. File Analysis (-check)](#1-file-analysis--check)
+    - [1. File Analysis (-scan)](#1-file-analysis--scan)
     - [2. Inspection (-inspect)](#2-inspection--inspect)
     - [3. Single File Conversion (-convert)](#3-single-file-conversion--convert)
     - [4. Batch Processing (-batch)](#4-batch-processing--batch)
@@ -125,15 +125,15 @@ sudo ln -s "$(pwd)/dovi_convert.sh" /usr/local/bin/dovi_convert
 
 ## Usage
 
-### 1. File Analysis (`-check`)
+### 1. File Analysis (`-scan`)
 
-Scans files to identify video format and FEL complexity.
+Scans files to identify video format and FEL complexity. (Alias: `-check`)
 
 ```bash
-dovi_convert -check              # All files in current directory
-dovi_convert -check "Film.mkv"   # Specific file
-dovi_convert -check -r           # Recursive (default depth: 5)
-dovi_convert -check -r 2         # Recursive (depth: 2)
+dovi_convert -scan              # All files in current directory
+dovi_convert -scan "Film.mkv"   # Specific file
+dovi_convert -scan -r           # Recursive (default depth: 5)
+dovi_convert -scan -r 2         # Recursive (depth: 2)
 ```
 
 **Output colors:**
