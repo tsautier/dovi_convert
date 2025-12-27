@@ -108,7 +108,7 @@ The tool will output details with the results of the scan and a verdict for each
 *   **Red:** Complex FEL (Active Brightness). Conversion is skipped by default.
 
 ### 2. Advanced Inspection
-If you want to verify a "Complex FEL" verdict manually, use the inspection tool. It analyzes the entire FEL to check for active luminance expansion.
+If you want to verify a scan verdicts manually (recommended for "Simple FEL" files), use the inspection tool. It analyzes the entire FEL to check for active luminance expansion.
 ```bash
 dovi_convert -inspect "Film.mkv"
 ```
