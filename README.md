@@ -8,75 +8,102 @@ This conversion ensures compatibility with media players that do not support the
 
 Converting Dolby Vision Profile 7 with FEL to Profile 8 is always a compromise. Make sure you read and understand the [Caveats and Notes](#caveats-and-notes) before you use this script.
 
+---
+
 ## Table of Contents
 
+- [What This Tool Does](#what-this-tool-does)
 - [Features](#features)
 - [Compatibility](#compatibility)
 - [Dependencies](#dependencies)
 - [Installation](#installation)
 - [Usage](#usage)
-    - [1. File Analysis](#1-file-analysis)
-    - [2. Advanced Inspection](#2-advanced-inspection)
-    - [3. Single File Conversion](#3-single-file-conversion)
-    - [4. Batch Processing](#4-batch-processing)
-    - [5. Cleanup](#5-cleanup)
-    - [6. Update Check](#6-update-check)
-    - [7. Using dovi_convert with a NAS](#7-using-dovi_convert-with-a-nas)
+    - [1. File Analysis (-check)](#1-file-analysis--check)
+    - [2. Inspection (-inspect)](#2-inspection--inspect)
+    - [3. Single File Conversion (-convert)](#3-single-file-conversion--convert)
+    - [4. Batch Processing (-batch)](#4-batch-processing--batch)
+    - [5. Cleanup (-cleanup)](#5-cleanup--cleanup)
+    - [6. Update Check (-update-check)](#6-update-check--update-check)
+    - [7. NAS Usage](#7-nas-usage)
 - [Troubleshooting](#troubleshooting)
 - [Caveats and Notes](#caveats-and-notes)
 
+---
+
+## What This Tool Does
+
+The conversion process:
+1. Strips the Enhancement Layer (EL) from the video
+2. Injects the RPU (dynamic metadata) into the base layer
+3. Creates a Profile 8.1 compatible file
+
+All audio and subtitle tracks are preserved. The original file is backed up automatically.
+
+---
+
 ## Features
 
-### Simple Command Line Interface
-Easy to use if you are comfortable using the terminal.
-
 ### Non-Destructive
-Creates backups of original files (`*.bak.dovi_convert`) before converting.
+Original files are backed up as `*.bak.dovi_convert` before any modification.
 
 ### Two Modes of Operation
 
-**Standard Mode**
-Uses "piping" to stream video data directly between tools. This is the fastest method and requires no temporary disk space. Limitation: It may fail on files with irregular structures.
+| Mode | Description |
+|------|-------------|
+| **Standard** (default) | Pipes video data directly between tools. Fast, no temp disk space. May fail on irregular files. |
+| **Safe** (`-safe`) | Extracts video to disk first. Slower, but handles Seamless Branching and structural issues. Auto-triggered on failure. |
 
-**Safe Mode**
-Extracts the video track to a temporary file on disk before converting. This is slower and uses more disk space, but it is robust against structural issues. It engages automatically if the Standard Mode fails (e.g. on "Seamless Branching" discs common from Disney/Marvel), or you can enforce it manually.
+### File Scanning & Analysis
 
-### Deep scan file analysis
+The tool scans MKV files to identify video format (HDR10, HDR10+, Dolby Vision Profile, etc.). For Profile 7 files with FEL, it samples RPU metadata to classify:
 
-Automatically scans MKV files, detects HDR standards (e.g. HDR10, HDR10+, Dolby Vision), and inspects the RPU (Dolby Vision dynamic metadata) of DV Profile 7 files to detect "Complex FEL".
+| Type | Color | Meaning |
+|------|-------|---------|
+| **MEL** | Green | No enhancement data. Safe to convert. |
+| **Simple FEL** | Cyan | No brightness expansion detected. Likely safe. |
+| **Complex FEL** | Red | Active brightness expansion. Conversion skipped by default. |
 
-*   **Complex FEL:** Titles where the Full Enhancement Layer (FEL) contains significant brightness information (e.g. a 4000-nit master vs a 1000-nit base layer). Converting these results in incorrect tone mapping. The script **skips** these files by default to prevent quality loss.
+> **How it works:** The scan samples 10 timestamps across the file to analyze brightness metadata. Complex FEL verdicts are mostly reliable. Simple FEL verdicts might miss isolated spikes - verify with `-inspect` if in doubt.
 
-### Dolby Vision Dynamic Metadata (RPU) Inspection
+### Manual Inspection
 
-A dedicated `-inspect` command to manually verify brightness expansion (Luminance check) if you want to verify the deep scan verdict.
+For definitive verification, the `-inspect` command reads the entire file frame-by-frame to confirm whether brightness expansion exists. Use this to verify Simple FEL verdicts, or when you need absolute certainty.
 
-*   **Why use it?** The default deep scan samples a small part of the file to detect meaningful FEL data, but it might miss isolated brightness spikes between the sample points. `-inspect` digs deeper by extracting and analyzing the entire FEL frame-by-frame. This takes significantly longer but provides a definitive answer on whether brightness expansion is present.
-* You should always use it if you don't trust the deep scan verdict, especially on Simple FEL files.
-*   Because it is "data-heavy" and slow, batch processing is not available for `-inspect`. This feature is designed to be used for "one-off" inspections of individual files, for cases where you are in doubt about the verdict of the default deep scan.
+### Automatic Backups
+
+All conversions create a backup: `[filename].mkv.bak.dovi_convert`
+
+The `-cleanup` command only deletes files with this extension, and includes a safety check to avoid deleting orphan backups.
+
+---
 
 ## Compatibility
 
-This script works on:
-*   **macOS** (tested on macOS 26)
-*   **Linux** (any modern distribution)
-*   **Windows** (via WSL - Windows Subsystem for Linux)
+- **macOS** (tested on macOS 26)
+- **Linux** (any modern distribution)
+- **Windows** (via WSL)
+
+---
 
 ## Dependencies
 
 **macOS Prerequisite:** [Homebrew](https://brew.sh) is required for automatic dependency installation.
 
-> **Important:** On macOS, use CLI versions of dependencies installed via [Homebrew](https://brew.sh) or [MacPorts](https://www.macports.org/). GUI app bundles (e.g., MKVToolNix.app, MediaInfo.app) may not work.
+> **Important:** On macOS, use CLI versions installed via [Homebrew](https://brew.sh) or [MacPorts](https://www.macports.org/). GUI app bundles (MKVToolNix.app, MediaInfo.app) may not work.
 
-*   [ffmpeg](https://ffmpeg.org/download.html)
-*   [dovi_tool](https://github.com/quietvoid/dovi_tool/releases)
-*   [MKVToolNix](https://mkvtoolnix.download/downloads.html)
-*   [MediaInfo](https://mediaarea.net/en/MediaInfo/Download)
-*   [jq](https://jqlang.github.io/jq/download/)
-*   [bc](https://www.gnu.org/software/bc/)
-*   [curl](https://curl.se/)
+| Tool | Link |
+|------|------|
+| ffmpeg | [ffmpeg.org](https://ffmpeg.org/download.html) |
+| dovi_tool | [GitHub](https://github.com/quietvoid/dovi_tool) |
+| MKVToolNix | [mkvtoolnix.download](https://mkvtoolnix.download/downloads.html) |
+| MediaInfo | [mediaarea.net](https://mediaarea.net/en/MediaInfo/Download) |
+| jq | [jqlang.github.io](https://jqlang.github.io/jq/download/) |
+| bc | [gnu.org](https://www.gnu.org/software/bc/) |
+| curl | [curl.se](https://curl.se/) |
 
-**Automatic Installation (Beta):** If any dependencies are missing, the tool will offer to install them for you using your system's package manager (Homebrew, apt, dnf, or pacman).
+**Automatic Installation (Beta):** Missing dependencies trigger an offer to install via your system's package manager (Homebrew, apt, dnf, pacman).
+
+---
 
 ## Installation
 
@@ -87,134 +114,168 @@ chmod +x dovi_convert.sh
 sudo mv dovi_convert.sh /usr/local/bin/dovi_convert
 ```
 
-### From Source (development version)
+### From Source
 ```bash
 git clone https://github.com/cryptochrome/dovi_convert.git && cd dovi_convert
 chmod +x dovi_convert.sh
 sudo ln -s "$(pwd)/dovi_convert.sh" /usr/local/bin/dovi_convert
 ```
 
+---
+
 ## Usage
 
-### 1. File Analysis
-Check the Dolby Vision profile of files and perform a **deep scan** to detect Complex FEL.
-```bash
-dovi_convert -check              # Analyze all files in current directory
-dovi_convert -check -r           # Analyze recursively (default depth 5)
-dovi_convert -check -r 2         # Analyze recursively (depth 2)
-dovi_convert -check "Film.mkv"   # Analyze specific file
-```
-The tool will output details with the results of the scan and a verdict for each file:
-*   **Green:** Safe to convert (MEL).
-*   **Cyan:** Likely safe to convert (Simple FEL).
-*   **Red:** Complex FEL (Active Brightness). Conversion is skipped by default.
+### 1. File Analysis (`-check`)
 
-### 2. Advanced Inspection
-If you want to verify a scan verdicts manually (recommended for "Simple FEL" files), use the inspection tool. It analyzes the entire FEL to check for active luminance expansion.
+Scans files to identify video format and FEL complexity.
+
+```bash
+dovi_convert -check              # All files in current directory
+dovi_convert -check "Film.mkv"   # Specific file
+dovi_convert -check -r           # Recursive (default depth: 5)
+dovi_convert -check -r 2         # Recursive (depth: 2)
+```
+
+**Output colors:**
+- **Green:** MEL - Safe to convert
+- **Cyan:** Simple FEL - Likely safe (verify with `-inspect` if uncertain)
+- **Red:** Complex FEL - Conversion skipped by default
+
+---
+
+### 2. Inspection (`-inspect`)
+
+Full frame-by-frame analysis to verify whether brightness expansion exists in the FEL.
+
 ```bash
 dovi_convert -inspect "Film.mkv"
 ```
-*   **Note:** This command strictly checks for active brightness data (L1 metadata). It does not analyze other reconstruction data, as brightness mismatch is the primary concern for playback compatibility. See [notes below](#1-a-note-on-fel-full-enhancement-layer).
 
-### 3. Single File Conversion
-**Standard Mode (Default):** Uses piping. Fastest method.
-```bash
-dovi_convert -convert "Movie.mkv"
-```
+Use this to verify Simple FEL verdicts, or if you want absolute certainty.
 
-**Safe Mode:** Extracts the video track to disk before converting. Required for Seamless Branching titles or files with structural issues.
-*   **Automatic Fallback:** The script will automatically offer to use Safe Mode if the Standard Mode fails.
-*   **Manual Force:** You can force it manually if you suspect issues:
-    ```bash
-    dovi_convert -convert "Movie.mkv" -safe
-    ```
+**Note:** Reads the entire file. Significantly slower than `-check`. Not available for batch operations.
 
-**Forcing Conversion (Complex FEL):**
-To convert a file detected as "Complex FEL" (e.g., if you successfully verified the file with `-inspect` and deemed it safe, or if you accept the potential tone mapping inaccuracy):
-```bash
-dovi_convert -convert "Complex_Movie.mkv" -force
-```
+> This command checks for active brightness data (L1 metadata). It does not analyze other reconstruction data, as brightness expansion is the primary concern for playback compatibility. See [Caveats](#1-a-note-on-fel-full-enhancement-layer) for details.
 
-### 4. Batch Processing
-Recursively scans for Profile 7 files and converts them. Automatically **skips** Complex FEL files unless `-force` is used.
+---
 
-**Note on Simple FEL:** If the batch detects files marked as "Simple FEL", it will pause and ask for confirmation to ensure they are safe, even if you use `-y`. To automate these, use the `-include-simple` flag.
+### 3. Single File Conversion (`-convert`)
 
 ```bash
-dovi_convert -batch           # Process current directory only
-dovi_convert -batch 2         # Process 2 folders deep
-dovi_convert -batch -y        # Run without confirmation prompts (Stops on Simple FEL)
-dovi_convert -batch -y -include-simple  # Run fully automated (Includes Simple FEL)
-dovi_convert -batch -force    # Convert ALL files (including Complex FEL)
+dovi_convert -convert "Movie.mkv"           # Standard mode
+dovi_convert -convert "Movie.mkv" -safe     # Force Safe mode
+dovi_convert -convert "Movie.mkv" -force    # Force convert Complex FEL
 ```
 
-### 5. Cleanup
-Deletes the `.bak.dovi_convert` backup files created during conversion.
+**Behavior:**
+- Skips Complex FEL files by default (use `-force` to override)
+- Original file renamed to `*.bak.dovi_convert`
+- Safe mode auto-triggers if Standard mode fails
+
+---
+
+### 4. Batch Processing (`-batch`)
+
+Recursively scans and converts Profile 7 files.
+
 ```bash
-dovi_convert -cleanup         # Clean current dir only
-dovi_convert -cleanup -r      # Clean recursively
+dovi_convert -batch               # Current directory
+dovi_convert -batch 2             # Depth: 2 folders
+dovi_convert -batch -y            # Auto-confirm (pauses on Simple FEL)
+dovi_convert -batch -y -include-simple  # Fully automated
+dovi_convert -batch -force        # Include Complex FEL
+dovi_convert -batch -delete       # Auto-delete backups after success
 ```
-**Safety Note:** The script checks if the "Parent" MKV exists. If the main movie file is missing, the backup is treated as an "orphan" and will **not** be deleted.
 
-### 6. Update Check
-The tool automatically checks for updates in the background. If a new version is available, a notification is displayed on the next run. To check immediately:
+**Safety behavior:**
+- Complex FEL files are skipped unless `-force` is used
+- Simple FEL files pause for confirmation unless `-include-simple` is used
+- `-y` alone skips confirmation prompts but still pauses on Simple FEL
+
+---
+
+### 5. Cleanup (`-cleanup`)
+
+Deletes `.bak.dovi_convert` backup files.
+
 ```bash
-dovi_convert -update-check
+dovi_convert -cleanup         # Current directory
+dovi_convert -cleanup -r      # Recursive
 ```
 
-### 7. Using dovi_convert with a NAS
+**Safety:** Checks if the parent MKV exists. Orphan backups (where the converted file is missing) are not deleted.
 
-If your media library is on a NAS and your system supports running bash scripts with the required dependencies, consider running the script directly on the NAS rather than from another machine.
+---
 
-**Why?** The script processes large files (often 50-80 GB) and needs to read significant portions for conversion, inspection, and even deep scanning. On slower networks such as 1 GbE or WiFi, a single conversion can take 15-20 minutes due to network overhead. Running locally on the NAS eliminates this bottleneck.
+### 6. Update Check (`-update-check`)
 
-**Note:** A Docker container for easier deployment on supported NAS devices is on the [roadmap](ROADMAP.md).
+The tool checks for updates in the background. A notification appears on the next run if an update is available.
+
+```bash
+dovi_convert -update-check    # Check immediately
+```
+
+---
+
+### 7. NAS Usage
+
+If your media library is on a NAS and your system supports running bash scripts with the required dependencies, consider running the script directly on the NAS.
+
+**Why?** The script processes large files (50-80 GB). On slower networks (1 GbE, WiFi), a single conversion can take 15-20 minutes due to network overhead. Running locally eliminates this bottleneck.
+
+**Note:** A Docker container for NAS deployment is on the [roadmap](ROADMAP.md).
+
+---
 
 ## Troubleshooting
 
 If a conversion fails:
 
-1.  Run the command with the `-debug` flag to generate a full log (`dovi_convert_debug.log`):
-    ```bash
-    dovi_convert -convert "Fail.mkv" -debug
-    ```
-2.  Check the log file for errors from `dovi_tool` or `ffmpeg`.
+1. Run with `-debug` to generate a log:
+   ```bash
+   dovi_convert -convert "Fail.mkv" -debug
+   ```
+2. Check `dovi_convert_debug.log` for errors from dovi_tool or ffmpeg.
+
+---
 
 ## Caveats and Notes
 
-### 1. A note on FEL (Full Enhancement Layer)
-This script discards the Enhancement Layer while retaining the RPU (dynamic metadata). For a lot of content, this works perfectly. However, a number of films use FEL to elevate brightness beyond the base layer (e.g., a 4000-nit master where the HDR10 base layer is a 1000-nit trim pass). For these specific titles, the retained RPU metadata may produce suboptimal tone mapping because it was designed for the combined layers.
+### 1. A Note on FEL (Full Enhancement Layer)
 
-*   **MEL (Minimal Enhancement Layer):** These files are safe to convert, as the EL contains no data. This is very common.
-*   **FEL (Full Enhancement Layer):** These files contain an active video layer.
-    *   **Complex FEL:** A significant number of FEL titles use this layer to expand brightness (as described above). Converting these results in incorrect tone mapping.
-    *   **Simple FEL:** Occasionally, FEL is used but does not expand brightness beyond the Base Layer. These are safe.
+This script discards the Enhancement Layer while retaining the RPU (dynamic metadata). For most content, this works well. However, some films use FEL to elevate brightness beyond the base layer (e.g., a 4000-nit master where the HDR10 base is a 1000-nit trim). For these titles, the retained RPU will lead to incorrect tone mapping because it was designed for the combined layers.
 
-**Detection:** This tool's "Deep Scan" feature automatically distinguishes between these types. It will advise you to **SKIP** Complex FEL files to prevent quality loss.
+| Type | Description |
+|------|-------------|
+| **MEL** | No EL data. Safe to convert. Very common. |
+| **Simple FEL** | FEL exists but does not expand brightness. Safe to convert. |
+| **Complex FEL** | FEL expands brightness. Conversion causes incorrect tone mapping. |
 
-**Recommendation:** For verified Complex FEL titles, it is better to watch the HDR10 base layer (or use a dedicated FEL-capable player like the **Ugoos AM6B+**) than to convert them to Profile 8.1.
+**Detection:** The scan feature automatically distinguishes these types. Complex FEL files are skipped by default.
 
-**Reference List:** If you want to cross-check the scan results of this script, refer to the [Official DoVi_Scripts FEL List](https://docs.google.com/spreadsheets/d/15i0a84uiBtWiHZ5CXZZ7wygLFXwYOd84/edit?gid=828864432#gid=828864432) (maintained by **R3S3t999**, author of [DoVi_Scripts](https://github.com/R3S3t9999/DoVi_Scripts)).
+**Recommendation:** For verified Complex FEL titles, watch the HDR10 base layer or use a FEL-capable player (e.g., Ugoos AM6B+) instead of converting.
 
-**Additional important caveat:** Some FEL titles contain reconstructive data beyond just luminance, such as film grain, noise, or color fixes. However, this tool assumes your playback device cannot handle FEL. While discarding the FEL means losing these specific visual enhancements, your device would be unable to display them regardless. This conversion ensures that you at least retain the critical Dolby Vision dynamic metadata.
+**Reference:** Cross-check results with the [Official DoVi_Scripts FEL List](https://docs.google.com/spreadsheets/d/15i0a84uiBtWiHZ5CXZZ7wygLFXwYOd84/edit?gid=828864432#gid=828864432) (maintained by R3S3t999, author of [DoVi_Scripts](https://github.com/R3S3t9999/DoVi_Scripts)).
+
+**Additional caveat:** Some FEL titles contain reconstructive data beyond luminance (film grain, noise, color fixes). Since your device cannot handle FEL anyway, discarding it means losing these enhancements - but you retain the critical Dolby Vision dynamic metadata.
 
 ### 2. Single Video Track Only
-The converted file will contain exactly one video track (the main movie). Secondary video streams (such as Picture-in-Picture commentary or Multi-Angle views) will be dropped because the conversion process isolates the main video track. All audio and subtitle tracks are preserved.
-*   **Note:** Your original file (containing all tracks) is preserved as a [filename].mkv.bak.dovi_convert backup, so no data is lost.
 
-### 3. Apple TV and Plex Caveat
+The converted file contains one video track (the main movie). Secondary streams (Picture-in-Picture, Multi-Angle) are dropped because the conversion isolates the main track.
 
-If you are using the **Plex app on Apple TV 4K**, you will likely encounter a "Fake Dolby Vision" issue, regardless of which version of tvOS you use, and regardless of which Dolby Vision profile the file uses.
+All audio and subtitle tracks are preserved. Your original file is backed up, so no data is lost.
 
--   **The Technical Reality:** While Apple officially added **native Profile 8.1 support in tvOS 17**, the Plex app's implementation (which relies on Apple's **AVPlayer** framework for Dolby Vision) is notoriously inconsistent.
--   **the "Fake DV" Issue:** In most cases, Plex will successfully trigger the "Dolby Vision" logo on your TV, but it fails to actually process and apply the dynamic RPU metadata. This means your TV is effectively playing the HDR10 base layer with a Dolby Vision flag - essentially "HDR10 in a Dolby Vision container."
--   **Plex vs. Infuse:** Unlike Plex, the **Infuse** app uses a custom player engine. Infuse is able to correctly leverage the tvOS 17+ native APIs (and its own internal processing) to ensure that the dynamic RPU metadata is actually applied to the video, resulting in a "true" Dolby Vision experience.
--   **Current Status:** Users have reported this behavior for years on the Plex forums. While Plex has occasionally updated their player, they have not yet achieved the same level of Profile 8.1 accuracy as Infuse.
--   **Recommendation:** If your primary playback device is an Apple TV 4K, **Infuse** is currently the only reliable way to ensure Dolby Vision files are played with active, true dynamic metadata. Infuse integrates with your Plex server. Be aware that it is a paid app. The free version does not support Dolby Vision.
+### 3. Apple TV and Plex
 
-### 4. A Note on Nvidia Shield
+If you use **Plex on Apple TV 4K**, you may encounter "Fake Dolby Vision" regardless of tvOS version or DV profile.
 
-The Nvidia Shield is technically capable of handling Profile 7 FEL files on its own by stripping the Enhancement Layer (EL) and injecting the RPU (dynamic metadata) into the video in real-time (essentially what the dovi_convert script does).
+- **Technical Reality:** Apple added native Profile 8.1 support in tvOS 17, but Plex's implementation (via AVPlayer) is inconsistent.
+- **The Issue:** Plex triggers the "Dolby Vision" logo on your TV but often fails to apply the RPU metadata. Result: HDR10 in a DV container.
+- **Plex vs Infuse:** Infuse uses a custom player that correctly applies RPU metadata for true Dolby Vision.
+- **Recommendation:** For Apple TV, **Infuse** is currently the only reliable option for correct DV playback. It integrates with Plex servers. The free version does not support Dolby Vision.
 
-However, the Shield can struggle with this process, especially with high-bitrate content. This often results in stuttering or skipped frames. For Shield users, this script is a useful tool to perform this conversion offline, pre-stripping the EL and injecting the RPU to ensure smooth and reliable playback for problematic high-bitrate files.
+### 4. Nvidia Shield
 
+The Shield can handle Profile 7 FEL by stripping the EL and injecting the RPU in real-time (what this script does offline).
+
+However, the Shield struggles with high-bitrate content while trying to convert in real-time, causing stuttering or dropped frames. Additionally, the Shield blindly converts any Profile 7 file without checking for Complex FEL - potentially causing incorrect tone mapping. This script analyzes files first and only converts what is safe, avoiding quality loss on problematic titles.
