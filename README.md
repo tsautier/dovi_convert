@@ -91,17 +91,19 @@ The `-cleanup` command only deletes files with this extension, and includes a sa
 
 > **Important:** On macOS, use CLI versions installed via [Homebrew](https://brew.sh) or [MacPorts](https://www.macports.org/). GUI app bundles (MKVToolNix.app, MediaInfo.app) may not work.
 
-| Tool | Link |
-|------|------|
-| ffmpeg | [ffmpeg.org](https://ffmpeg.org/download.html) |
-| dovi_tool | [GitHub](https://github.com/quietvoid/dovi_tool) |
-| MKVToolNix | [mkvtoolnix.download](https://mkvtoolnix.download/downloads.html) |
-| MediaInfo | [mediaarea.net](https://mediaarea.net/en/MediaInfo/Download) |
-| jq | [jqlang.github.io](https://jqlang.github.io/jq/download/) |
-| bc | [gnu.org](https://www.gnu.org/software/bc/) |
-| curl | [curl.se](https://curl.se/) |
+| Tool | Notes |
+|------|-------|
+| ffmpeg | — |
+| [dovi_tool](https://github.com/quietvoid/dovi_tool) | May require manual install |
+| mkvtoolnix | CLI tools (`mkvmerge`, `mkvextract`) |
+| mediainfo | CLI version |
+| jq | — |
+| bc | — |
+| curl | — |
 
-**Automatic Installation (Beta):** Missing dependencies trigger an offer to install via your system's package manager (Homebrew, apt, dnf, pacman).
+**Automatic Installation:** Missing dependencies are detected and can be installed via your system's package manager (Homebrew, apt, dnf, pacman).
+
+> **Note:** `dovi_tool` may not be available in all package managers. If auto-install fails, download from the [GitHub releases](https://github.com/quietvoid/dovi_tool/releases).
 
 ---
 
