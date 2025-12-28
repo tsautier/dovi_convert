@@ -91,15 +91,13 @@ The `-cleanup` command only deletes files with this extension, and includes a sa
 
 > **Important:** On macOS, use CLI versions installed via [Homebrew](https://brew.sh) or [MacPorts](https://www.macports.org/). GUI app bundles (MKVToolNix.app, MediaInfo.app) may not work.
 
-| Tool | Notes |
-|------|-------|
-| ffmpeg | — |
-| [dovi_tool](https://github.com/quietvoid/dovi_tool) | May require manual install |
-| mkvtoolnix | CLI tools (`mkvmerge`, `mkvextract`) |
-| mediainfo | CLI version |
-| jq | — |
-| bc | — |
-| curl | — |
+- ffmpeg
+- [dovi_tool](https://github.com/quietvoid/dovi_tool) (may require manual install)
+- mkvtoolnix (CLI: `mkvmerge`, `mkvextract`)
+- mediainfo (CLI version)
+- jq
+- bc
+- curl
 
 **Automatic Installation:** Missing dependencies are detected and can be installed via your system's package manager (Homebrew, apt, dnf, pacman).
 
