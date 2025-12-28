@@ -1,42 +1,44 @@
 # Project Roadmap
 
-This document outlines the planned future development for `dovi_convert`.
-*Note: This roadmap is subject to change based on user feedback and technical feasibility.*
+This document outlines planned future development for `dovi_convert`.
 
-## Rewrite in Python
-- What started as a simple idea to quickly convert Dolby Vision files to Profile 7 has now turned into a 2000-line Bash script.
-- Not ideal. 
-- Before implementing any new features (see below), the next big project is to completely re-write everything in Python.
-- This will make the script much more robust and easier to maintain.
-- It will also make it possible to implement features that are currently not possible with Bash.
+> **Note:** This roadmap is subject to change based on user feedback and technical feasibility.
 
-## Core Features
-- [x] **Automatic Dependency Management**
-    - Detect missing tools (ffmpeg, mkvtoolnix, dovi_tool).
-    - Auto-install via system package manager (Homebrew, apt, dnf, pacman).
-- [ ] **Enhanced Audio Support (Apple TV)**
-    - Add option to convert TrueHD Atmos tracks to EAC3 Atmos (using tools like `deezy`).
-    - Ensures full spatial audio compatibility on Apple TV and similar devices.
-    - Still investigating if this is possible (paid Dolby Vision encoder required).
-- [x] **Smart FEL Detection and Analysis**
-    - Automatically detect films where the Enhancement Layer significantly impacts brightness.
-    - Provide clear warnings or "Purist Grade" ratings during file scanning.
-    - Helps identify titles where conversion might lead to suboptimal tone mapping.
-- [ ] **Custom Output Path**
-    - Support `-o /path` flag to write converted files to a different directory.
-    - Enables automation workflows (Automator, watch folders) without re-trigger issues.
+---
 
-## Docker & NAS Support
-### Phase 1: The Container
-- [ ] **Official Docker Image**
-    - Lightweight, plug-and-play container (Alpine Linux base).
-    - Pre-packaged with all dependencies (ffmpeg, dovi_tool, mkvtoolnix).
-    - Should work on any NAS supporting Docker (e.g. Unraid, TrueNAS, Synology, QNAP, etc.)
-    - Automated builds via GitHub Actions (Docker Hub & GHCR).
+## In Progress
 
-### Phase 2: Web Interface (WebUI)
-- [ ] **Browser-Based Management**
-    - **Visual File Browser:** Navigate storage directly in the browser to find media.
-    - **Batch Selection:** Select multiple files or entire folders for processing.
-    - **Live Monitoring:** View real-time progress bars and conversation logs.
-    - **Backup Management:** Review and clean up backup files easily.
+### Python Rewrite
+What started as a simple idea has grown into a 2000-line Bash script. Before adding major new features, the plan is to rewrite the core in Python for improved maintainability and robustness.
+
+---
+
+## Planned
+
+### Convert to HDR10
+New command to convert Complex FEL files to pure HDR10 instead of Profile 8.1, by stripping the Dolby Vision layers entirely and only retaining the HDR10 base layer. Useful for Complex FEL files where standard conversion would cause incorrect tone mapping. Includes optional backup of removed DV layers for future restoration.
+
+### Configurable Scan Samples for -scan
+Add `-samples N` flag to increase sampling during FEL analysis. Default remains 10; users can set 10-30 for taking more samples and improving the detection of brightness expansion - at the cost of longer processing time. `-inspect`remains the go to option for detailed analysis.
+
+### FEL Threshold Adjustment  
+Reduce false positives in Complex FEL detection by adjusting the brightness threshold. Add `-threshold N` flag for power users who want to fine-tune detection sensitivity.
+
+### Docker Container
+Lightweight, plug-and-play container with all dependencies pre-packaged. Target platforms: Unraid, TrueNAS, Synology, QNAP, and any Docker-compatible NAS. Automated builds via GitHub Actions.
+
+### Custom Output Path
+Support `-o /path` flag to write converted files to a different directory. Enables automation workflows (Automator, watch folders) without re-trigger issues.
+
+---
+
+## Under Consideration
+
+### HDR10 Restoration from Backup
+Automated command to restore full Profile 7 FEL from HDR10 output + saved DV layer backups. Depends on "Convert to HDR10" feature.
+
+### Web Interface (Docker Phase 2)
+Browser-based management UI for NAS users: visual file browser, batch selection, live progress monitoring, and backup management. Depends on Docker container release.
+
+### TrueHD Atmos to EAC3 Atmos Conversion
+Convert TrueHD Atmos audio tracks to EAC3 Atmos for Apple TV compatibility. Feasibility still under investigation (may require paid Dolby encoder license).
