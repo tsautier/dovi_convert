@@ -4,9 +4,11 @@ A Bash script to automate the conversion of Dolby Vision Profile 7 MKV files (UH
 
 This conversion ensures compatibility with media players that do not support the Profile 7 Enhancement Layer (EL), such as the Apple TV 4K (with Plex or Infuse), Nvidia Shield (to a certain extent), Zidoo, and other devices, preventing fallback to standard HDR10 and other issues. The result is a highly compatible file that can be played on a wide range of devices.
 
+Unlike other tools and "real-time converters" such as those built into Kodi (Dovi Compatibility Mode) or the Nvidia Shield, this tool analyzes the Dolby Vision enhancement layer to determine if it is actually safe to convert. This readme will explain the difference between the two approaches. Also see:
+
 ### Important Note
 
-Converting Dolby Vision Profile 7 with FEL to Profile 8 is always a compromise. Make sure you read and understand the [Caveats and Notes](#caveats-and-notes) before you use this script.
+Converting Dolby Vision Profile 7 with FEL to Profile 8.1 is always a compromise. Make sure you read and understand the [Caveats and Notes](#caveats-and-notes) before you use this script.
 
 ---
 
@@ -243,7 +245,7 @@ If a conversion fails:
 
 ### 1. A Note on FEL (Full Enhancement Layer)
 
-This script discards the Enhancement Layer while retaining the RPU (dynamic metadata). For most content, this works well. However, some films use FEL to elevate brightness beyond the base layer (e.g., a 4000-nit master where the HDR10 base is a 1000-nit trim). For these titles, the retained RPU will lead to incorrect tone mapping because it was designed for the combined layers.
+This script discards the Enhancement Layer while retaining the RPU (dynamic metadata). For most content, this works well. However, some films use FEL to elevate brightness beyond the base layer (e.g., a 4000-nit master where the HDR10 base is a 1000-nit trim). For these titles, the retained RPU will lead to incorrect tone mapping (darker picture, flickering, and other issues)because it was designed for the combined layers.
 
 | Type | Description |
 |------|-------------|
