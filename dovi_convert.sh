@@ -332,10 +332,7 @@ check_update_status_foreground() {
         latest_version=$(cat "$UPDATE_FILE")
         
         if version_gt "$latest_version" "$VERSION"; then
-             # Version Mismatch - likely an update
-             # We can do a smarter semantic check if needed, but for now difference = update
-             # Note: This might flag dev versions, but acceptable.
-             
+                          
              echo -e "${Cyan}---------------------------------------------------${RESET}"
              echo -e "${BOLD}Update Available:${RESET} ${GREEN}$latest_version${RESET} (Current: v$VERSION)"
              echo -e "Get it at: https://github.com/cryptochrome/dovi_convert"
