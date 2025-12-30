@@ -6,6 +6,15 @@ on:
       - 'v6*'  # Triggers Stable build
       - 'v7*'  # Triggers Beta build
   workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build Type (stable uses Bash script from latest release)'
+        required: true
+        default: 'beta'
+        type: choice
+        options:
+        - beta
+        - stable
 
 env:
   REGISTRY: docker.io
@@ -25,25 +34,42 @@ jobs:
       - name: Extract version and Determine Config
         id: config
         run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
+          # Parse GITHUB_REF (refs/tags/v7.0.0 or refs/heads/main)
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          else
+            # Handle branch execution (e.g. main)
+            VERSION=${GITHUB_REF#refs/heads/}
+            VERSION=${VERSION//\//-} # Sanitize: replace / with -
+          fi
+          
           echo "VERSION=${VERSION}" >> $GITHUB_OUTPUT
           
-          if [[ "$VERSION" == 6* ]]; then
+          if [[ "$VERSION" == 6* ]] || [[ "${{ inputs.build_type }}" == "stable" ]]; then
             echo "Building STABLE (v6)"
             echo "DOCKERFILE=Dockerfile.stable" >> $GITHUB_OUTPUT
-            # Tag as: latest, 6.x.x
-            echo "TAGS=${{ env.IMAGE_NAME }}:latest,${{ env.IMAGE_NAME }}:${VERSION}" >> $GITHUB_OUTPUT
+            # Tag as: latest, 6.x.x (or branch-name if manual)
+            if [[ "$VERSION" == 6* ]]; then
+               TAGS="${{ env.IMAGE_NAME }}:latest,${{ env.IMAGE_NAME }}:${VERSION}"
+            else
+               TAGS="${{ env.IMAGE_NAME }}:${VERSION}"
+            fi
+            echo "TAGS=${TAGS}" >> $GITHUB_OUTPUT
             
-          elif [[ "$VERSION" == 7* ]]; then
+          elif [[ "$VERSION" == 7* ]] || [[ "${{ inputs.build_type }}" == "beta" ]]; then
             echo "Building BETA (v7)"
             echo "DOCKERFILE=Dockerfile.beta" >> $GITHUB_OUTPUT
-            # Tag as: beta, 7.x.x
-            echo "TAGS=${{ env.IMAGE_NAME }}:beta,${{ env.IMAGE_NAME }}:${VERSION}" >> $GITHUB_OUTPUT
+            # Tag as: beta, 7.x.x (or branch-name if manual)
+            if [[ "$VERSION" == 7* ]]; then
+               TAGS="${{ env.IMAGE_NAME }}:beta,${{ env.IMAGE_NAME }}:${VERSION}"
+            else
+               TAGS="${{ env.IMAGE_NAME }}:${VERSION}"
+            fi
+            echo "TAGS=${TAGS}" >> $GITHUB_OUTPUT
             
           else
-            echo "Unknown version branch. Building as custom tag only."
-            echo "DOCKERFILE=Dockerfile.beta" >> $GITHUB_OUTPUT
-            echo "TAGS=${{ env.IMAGE_NAME }}:${VERSION}" >> $GITHUB_OUTPUT
+            echo "::error::Unknown version/build type. You must select 'beta' or 'stable' manually for non-release builds."
+            exit 1
           fi
 
       - name: Set up QEMU
