@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [v7.0.0-beta2] - 2024-12-30
+### Fixed
+- **Interactive Batch Exclusion:** Responding "No" to the "Include Simple-FEL" prompt now correctly filters those files from the queue instead of cancelling the entire batch.
+- **Ctrl+C Handling:** Fixed an issue where the script would hang if interrupted during batch mode prompts.
+- **Redundant Prompts:** Fixed an issue where Simple-FEL files would trigger a confirmation prompt for every single file even after being approved at the batch start.
+
+### Changed
+- **Terminology:** Updated batch warning messages to refer to `-scan` instead of `-check`.
+- **Messaging:** Improved clarity of Simple-FEL inclusion messages ("Explicitly included").
+
 ## [v7.0.0-beta1] - 2024-12-30 (Public Beta)
 ### ⚡ Python Rewrite & Performance
 - **Rewritten from scratch:** The entire tool has been rewritten in Python, replacing the original Bash script.

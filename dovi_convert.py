@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v7.0.0-beta1)
+dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v7.0.0-beta2)
 
 DESCRIPTION:
   Automates conversion of Dolby Vision Profile 7 MKV files (UHD Blu-ray)
@@ -31,7 +31,7 @@ from typing import List, Optional, Tuple
 # CONSTANTS
 # =============================================================================
 
-VERSION = "7.0.0-beta1"
+VERSION = "7.0.0-beta2"
 REPO_URL = "https://api.github.com/repos/cryptochrome/dovi_convert/releases/latest"
 
 # ANSI Colors
@@ -1373,7 +1373,7 @@ class DoviConvertApp:
         # Simple FEL Advisory
         if "FEL (Simple)" in self.dovi_status:
             if self.batch_running and self.config.include_simple:
-                print(f"{CYAN}[i] Simple FEL: Included via -include-simple flag.{RESET}")
+                print(f"{CYAN}[i] Simple-FEL: Explicitly included.{RESET}")
             else:
                 print(f"{YELLOW}[!] WARNING: This is a 'Simple FEL' file.{RESET}")
                 print("    Scan found no active brightness expansion.")
@@ -1621,7 +1621,6 @@ class DoviConvertApp:
     
     def cmd_batch(self, max_depth: int = 1) -> None:
         """Batch processing of directory."""
-        self.batch_running = True
         
         conversion_queue: List[Path] = []
         simple_fel_queue: List[Path] = []
@@ -1686,13 +1685,22 @@ class DoviConvertApp:
         # Safety gate
         if self.config.auto_yes:
             if simple_fel_count > 0 and not self.config.include_simple:
-                print(f"\n{RED}[!] SAFETY STOP:{RESET} Simple FEL files detected in Auto-Mode.")
-                print(f"    Warning: Batch includes {simple_fel_count} 'Simple FEL' files.")
-                print("    For details, run -check first.")
-                print(f"    To automate their conversion, you must add: {BOLD}-include-simple{RESET}")
-                print("    Skipping batch execution.")
-                self.batch_running = False
-                return
+                print(f"\n{YELLOW}[!] {simple_fel_count} Simple-FEL files detected.{RESET}")
+                print(f"    To analyze them, use {BOLD}-inspect{RESET}, to include them in batch conversions, use {BOLD}-include-simple{RESET}")
+                print(f"    Skipping {simple_fel_count} files. Proceeding with the remaining files...")
+                
+                # Filter out Simple FEL files
+                conversion_queue = [f for f in conversion_queue if f not in simple_fel_queue]
+                
+                # Update counters
+                simple_count -= simple_fel_count
+                simple_fel_count = 0
+                queue_count = len(conversion_queue)
+                
+                if queue_count == 0:
+                    print(f"\nNo safe files remaining for conversion.")
+                    self.batch_running = False
+                    return
             
             print(f"{YELLOW}Auto-Yes (-y) active. Starting conversion immediately...{RESET}")
             time.sleep(2)
@@ -1715,16 +1723,29 @@ class DoviConvertApp:
             
             if simple_fel_count > 0:
                 print(f"\n{YELLOW}[!] WARNING: Batch includes {simple_fel_count} 'Simple FEL' files.{RESET}")
-                print("    For details, run -check first.")
+                print("    For details, run -scan first.")
                 try:
-                    reply = input("    Proceed with these files? (y/N) ").strip().lower()
+                    reply = input("    Include Simple-FEL files in batch? (y/N) ").strip().lower()
                 except EOFError:
                     reply = "n"
-            else:
-                try:
-                    reply = input("\nProceed with conversion? (Y/n) ").strip().lower()
-                except EOFError:
-                    reply = "n"
+                
+                if reply == "y":
+                    self.config.include_simple = True
+                else:
+                    print(f"    {YELLOW}Excluding {simple_fel_count} Simple FEL files from run.{RESET}")
+                    # Filter out Simple FEL files
+                    conversion_queue = [f for f in conversion_queue if f not in simple_fel_queue]
+                    queue_count = len(conversion_queue)
+                    
+                    if queue_count == 0:
+                        print(f"\n{YELLOW}No files remaining after exclusion. Exiting.{RESET}")
+                        self.batch_running = False
+                        return
+            
+            try:
+                reply = input(f"\nProceed with conversion of {queue_count} files? (Y/n) ").strip().lower()
+            except EOFError:
+                reply = "n"
             
             if reply not in ("y", ""):
                 print("Batch cancelled.")
@@ -1733,6 +1754,7 @@ class DoviConvertApp:
         
         print()
         print("=" * 51)
+        self.batch_running = True
         print("BATCH PROCESSING STARTED")
         print("=" * 51)
         

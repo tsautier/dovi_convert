@@ -14,8 +14,6 @@ Unlike other tools and "real-time converters" such as those built into Kodi (Dov
 
 Converting Dolby Vision Profile 7 with FEL to Profile 8.1 is always a compromise. Make sure you read and understand the [Caveats and Notes](#caveats-and-notes) before you use this script.
 
----
-
 ## Table of Contents
 
 - [What This Tool Does](#what-this-tool-does)
@@ -34,7 +32,6 @@ Converting Dolby Vision Profile 7 with FEL to Profile 8.1 is always a compromise
 - [Troubleshooting](#troubleshooting)
 - [Caveats and Notes](#caveats-and-notes)
 
----
 
 ## What This Tool Does
 
@@ -45,7 +42,6 @@ The conversion process:
 
 All audio and subtitle tracks are preserved. The original file is backed up automatically.
 
----
 
 ## Features
 
@@ -71,7 +67,7 @@ The tool scans MKV files to identify video format (HDR10, HDR10+, Dolby Vision P
 
 > **How it works:** The scan samples 10 timestamps across the file to analyze brightness metadata. Complex FEL verdicts are mostly reliable. Simple FEL verdicts might miss isolated spikes - verify with `-inspect` if in doubt.
 
-### Manual Inspection
+### Deep Inspection
 
 For definitive verification, the `-inspect` command reads the entire file frame-by-frame to confirm whether brightness expansion exists. Use this to verify Simple FEL verdicts, or when you need absolute certainty.
 
@@ -81,7 +77,6 @@ All conversions create a backup: `[filename].mkv.bak.dovi_convert`
 
 The `-cleanup` command only deletes files with this extension, and includes a safety check to avoid deleting orphan backups.
 
----
 
 ## Compatibility
 
@@ -89,7 +84,6 @@ The `-cleanup` command only deletes files with this extension, and includes a sa
 - **Linux** (any modern distribution)
 - **Windows** (via WSL)
 
----
 
 ## Dependencies
 
@@ -109,7 +103,6 @@ The `-cleanup` command only deletes files with this extension, and includes a sa
 
 > **Note:** `dovi_tool` may not be available in all package managers. If auto-install fails, download from the [GitHub releases](https://github.com/quietvoid/dovi_tool/releases).
 
----
 
 ## Installation
 
@@ -133,15 +126,6 @@ sudo mv dovi_convert.py /usr/local/bin/dovi_convert
 > [!IMPORTANT]
 > This is a beta release. Report issues on [GitHub](https://github.com/cryptochrome/dovi_convert/issues).
 
-### From Source
-```bash
-git clone https://github.com/cryptochrome/dovi_convert.git && cd dovi_convert
-chmod +x dovi_convert.sh
-sudo ln -s "$(pwd)/dovi_convert.sh" /usr/local/bin/dovi_convert
-```
-
----
-
 ## Usage
 
 ### 1. File Analysis (`-scan`)
@@ -160,7 +144,6 @@ dovi_convert -scan -r 2         # Recursive (depth: 2)
 - **Cyan:** Simple FEL - Likely safe (verify with `-inspect` if uncertain)
 - **Red:** Complex FEL - Conversion skipped by default
 
----
 
 ### 2. Inspection (`-inspect`)
 
@@ -176,7 +159,6 @@ Use this to verify Simple FEL verdicts, or if you want absolute certainty.
 
 > This command checks for active brightness data (L1 metadata). It does not analyze other reconstruction data, as brightness expansion is the primary concern for playback compatibility. See [Caveats](#1-a-note-on-fel-full-enhancement-layer) for details.
 
----
 
 ### 3. Single File Conversion (`-convert`)
 
@@ -191,7 +173,6 @@ dovi_convert -convert "Movie.mkv" -force    # Force convert Complex FEL
 - Original file renamed to `*.bak.dovi_convert`
 - Safe mode auto-triggers if Standard mode fails
 
----
 
 ### 4. Batch Processing (`-batch`)
 
@@ -211,7 +192,6 @@ dovi_convert -batch -delete       # Auto-delete backups after success
 - Simple FEL files pause for confirmation unless `-include-simple` is used
 - `-y` alone skips confirmation prompts but still pauses on Simple FEL
 
----
 
 ### 5. Cleanup (`-cleanup`)
 
@@ -224,8 +204,6 @@ dovi_convert -cleanup -r      # Recursive
 
 **Safety:** Checks if the parent MKV exists. Orphan backups (where the converted file is missing) are not deleted.
 
----
-
 ### 6. Update Check (`-update-check`)
 
 The tool checks for updates in the background. A notification appears on the next run if an update is available.
@@ -234,7 +212,6 @@ The tool checks for updates in the background. A notification appears on the nex
 dovi_convert -update-check    # Check immediately
 ```
 
----
 
 ### 7. NAS Usage
 
@@ -244,7 +221,6 @@ If your media library is on a NAS and your system supports running bash scripts 
 
 **Note:** A Docker container for NAS deployment is on the [roadmap](ROADMAP.md).
 
----
 
 ## Troubleshooting
 
@@ -256,7 +232,6 @@ If a conversion fails:
    ```
 2. Check `dovi_convert_debug.log` for errors from dovi_tool or ffmpeg.
 
----
 
 ## Caveats and Notes
 
