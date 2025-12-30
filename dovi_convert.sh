@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v6.6.4)
+# dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v6.6.5)
 #
 # DESCRIPTION:
 #   Automates conversion of Dolby Vision Profile 7 MKV files (UHD Blu-ray)
@@ -22,7 +22,7 @@ AUTO_YES=false          # Toggled by -y
 INCLUDE_SIMPLE=false    # Toggled by -include-simple
 
 # App Data
-VERSION="6.6.4"
+VERSION="6.6.5"
 REPO_URL="https://api.github.com/repos/cryptochrome/dovi_convert/releases/latest"
 CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/dovi_convert"
 UPDATE_FILE="$CACHE_DIR/latest_version"
@@ -478,7 +478,8 @@ check_fel_complexity() {
     fi
 
     for t in "${timestamps[@]}"; do
-        local temp_hevc="probe_${t}_$(date +%s)_$$.hevc"
+        local input_dir="$(dirname "$input_file")"
+        local temp_hevc="${input_dir}/probe_${t}_$(date +%s)_$$.hevc"
         local temp_rpu="${temp_hevc}.rpu"
         local temp_json="${temp_hevc}.json"
 
@@ -1573,7 +1574,8 @@ cmd_inspect() {
     
     # --- MEL Fast-Pass (Pre-Flight) ---
     start_spinner "Checking EL Structure (Pre-Flight)... "
-    local pf_hevc="inspect_pf_$(date +%s)_$$.hevc"
+    local input_dir="$(dirname "$file")"
+    local pf_hevc="${input_dir}/inspect_pf_$(date +%s)_$$.hevc"
     local pf_rpu="${pf_hevc}.rpu"
     local pf_json="${pf_hevc}.json"
     local mel_detected=false
@@ -1605,8 +1607,8 @@ cmd_inspect() {
     fi
     printf "\r\e[KChecking EL Structure... Done (FEL Detected - Proceeding).\n"
 
-    local temp_rpu="inspect_$(date +%s)_$$.rpu"
-    local temp_json="inspect_$(date +%s)_$$.json"
+    local temp_rpu="${input_dir}/inspect_$(date +%s)_$$.rpu"
+    local temp_json="${input_dir}/inspect_$(date +%s)_$$.json"
     local use_safe_mode=$SAFE_MODE
 
     # 2. Extract Full RPU
@@ -1642,7 +1644,7 @@ cmd_inspect() {
                 fi
             fi
         else
-            local raw_temp="inspect_temp_$(date +%s)_$$.hevc"
+            local raw_temp="${input_dir}/inspect_temp_$(date +%s)_$$.hevc"
             start_spinner "Extracting Track (Safe Mode)... "
             mkvextract "$file" tracks "$VIDEO_TRACK_ID:$raw_temp" >/dev/null 2>&1
             local res=$?

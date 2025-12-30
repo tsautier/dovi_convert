@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v7.0.0-beta2)
+dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v7.0.0-beta3)
 
 DESCRIPTION:
   Automates conversion of Dolby Vision Profile 7 MKV files (UHD Blu-ray)
@@ -31,7 +31,7 @@ from typing import List, Optional, Tuple
 # CONSTANTS
 # =============================================================================
 
-VERSION = "7.0.0-beta2"
+VERSION = "7.0.0-beta3"
 REPO_URL = "https://api.github.com/repos/cryptochrome/dovi_convert/releases/latest"
 
 # ANSI Colors
@@ -990,7 +990,7 @@ class DoviConvertApp:
                 break
             
             # Create temp files
-            temp_hevc = Path(f"probe_{t}_{int(time.time())}_{os.getpid()}.hevc")
+            temp_hevc = filepath.parent / f"probe_{t}_{int(time.time())}_{os.getpid()}.hevc"
             temp_rpu = temp_hevc.with_suffix(".rpu")
             temp_json = temp_hevc.with_suffix(".json")
             
@@ -1912,7 +1912,7 @@ class DoviConvertApp:
         spinner.start()
         
         mel_detected = False
-        pf_hevc = Path(f"inspect_pf_{int(time.time())}_{os.getpid()}.hevc")
+        pf_hevc = filepath.parent / f"inspect_pf_{int(time.time())}_{os.getpid()}.hevc"
         pf_rpu = pf_hevc.with_suffix(".rpu")
         pf_json = pf_hevc.with_suffix(".json")
         
@@ -1964,8 +1964,8 @@ class DoviConvertApp:
         
         print(f"\r\033[KChecking EL Structure... Done (FEL Detected - Proceeding).")
         
-        temp_rpu = Path(f"inspect_{int(time.time())}_{os.getpid()}.rpu")
-        temp_json = Path(f"inspect_{int(time.time())}_{os.getpid()}.json")
+        temp_rpu = filepath.parent / f"inspect_{int(time.time())}_{os.getpid()}.rpu"
+        temp_json = filepath.parent / f"inspect_{int(time.time())}_{os.getpid()}.json"
         use_safe_mode = self.config.safe_mode
         
         # Extract full RPU
@@ -2023,7 +2023,7 @@ class DoviConvertApp:
                             print(f"{RED}Aborted.{RESET}")
                             return
             else:
-                raw_temp = Path(f"inspect_temp_{int(time.time())}_{os.getpid()}.hevc")
+                raw_temp = filepath.parent / f"inspect_temp_{int(time.time())}_{os.getpid()}.hevc"
                 
                 spinner = Spinner("Extracting Track (Safe Mode)... ")
                 spinner.start()
