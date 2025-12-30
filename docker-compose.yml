@@ -1,0 +1,41 @@
+services:
+  dovi_convert:
+    image: cryptochrome/dovi_convert:latest
+    container_name: dovi_convert
+    hostname: dovi-convert
+
+    # =========================================================================
+    # User/Group ID for file permissions
+    # Set these to match your NAS user to avoid permission issues
+    # =========================================================================
+    environment:
+      - PUID=1000 # Your user ID (run 'id' to find)
+      - PGID=1000 # Your group ID
+      - TZ=Europe/Berlin # Your timezone
+
+    # =========================================================================
+    # Volume mounts - adjust paths to match your setup
+    # =========================================================================
+    volumes:
+      # Mount your media folder(s) here
+      # Format: /path/on/host:/path/in/container
+      - /mnt/media/movies:/data/movies
+      - /mnt/media/tv:/data/tv
+      # =========================================================================
+      # Web terminal port
+      # Access at http://your-nas-ip:7681
+      # Change the first number to use a different port (e.g., 8080:7681)
+      # =========================================================================
+    ports:
+      - 7681:7681
+
+    # =========================================================================
+    # Container behavior
+    # =========================================================================
+    restart: unless-stopped
+    # Optional: limit resources
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '4'
+    #       memory: 4G
