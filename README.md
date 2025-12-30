@@ -4,7 +4,11 @@ A Bash script to automate the conversion of Dolby Vision Profile 7 MKV files (UH
 
 This conversion ensures compatibility with media players that do not support the Profile 7 Enhancement Layer (EL), such as the Apple TV 4K (with Plex or Infuse), Nvidia Shield (to a certain extent), Zidoo, and other devices, preventing fallback to standard HDR10 and other issues. The result is a highly compatible file that can be played on a wide range of devices.
 
-Unlike other tools and "real-time converters" such as those built into Kodi (Dovi Compatibility Mode) or the Nvidia Shield, this tool analyzes the Dolby Vision enhancement layer to determine if it is actually safe to convert. This readme will explain the difference between the two approaches. Also see:
+Unlike other tools and "real-time converters" such as those built into Kodi (Dovi Compatibility Mode) or the Nvidia Shield, this tool analyzes the Dolby Vision enhancement layer to determine if it is actually safe to convert. This readme will explain the difference between the two approaches. 
+
+> [!NOTE]
+> **Python Rewrite Available (v7 Beta)**  
+> A complete Python rewrite is now available for testing. To try the beta, see [installation instructions](#beta-v7-python-rewrite).
 
 ### Important Note
 
@@ -115,6 +119,19 @@ wget https://github.com/cryptochrome/dovi_convert/releases/latest/download/dovi_
 chmod +x dovi_convert.sh
 sudo mv dovi_convert.sh /usr/local/bin/dovi_convert
 ```
+
+### Beta: v7 (Python Rewrite)
+
+The Python version requires **Python 3.8+** and standard media tools (`ffmpeg`, `mkvtoolnix`, `dovi_tool`, `mediainfo`).
+
+```bash
+wget https://github.com/cryptochrome/dovi_convert/releases/download/v7.0.0-beta1/dovi_convert.py
+chmod +x dovi_convert.py
+sudo mv dovi_convert.py /usr/local/bin/dovi_convert
+```
+
+> [!IMPORTANT]
+> This is a beta release. Report issues on [GitHub](https://github.com/cryptochrome/dovi_convert/issues).
 
 ### From Source
 ```bash
