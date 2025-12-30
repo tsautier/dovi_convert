@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [v7.0.0-beta1] - 2024-12-30 (Public Beta)
+### ⚡ Python Rewrite & Performance
+- **Rewritten from scratch:** The entire tool has been rewritten in Python, replacing the original Bash script.
+    - **Why?** To ensure future maintainability, improve stability, and allow for more new features in the future (Bash was getting out of hand).
+- **Performance:** RPU analysis (`-inspect`) is **5x faster** due to native Python processing.
+- **Dependencies:** Removed `jq`, `bc`, `curl`, `sed`, `awk`, `grep`. The script now only uses the standard library and core media tools (`ffmpeg`, etc.).
+- **Parity:** Functionally identical to the v6 Bash version.
+
+
 ## [6.6.4] - 2025-12-28
 ### Added
 - **New `-scan` command** - A better-named alias for `-check`. Both commands work identically. `-check` remains supported for backwards compatibility.
