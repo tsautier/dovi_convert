@@ -1,6 +1,6 @@
 # dovi_convert
 
-A Bash script to automate the conversion of Dolby Vision Profile 7 MKV files (UHD Blu-ray rips) into Profile 8.1.
+A tool to automate the conversion of Dolby Vision Profile 7 MKV files (UHD Blu-ray rips) into Profile 8.1.
 
 This conversion ensures compatibility with media players that do not support the Profile 7 Enhancement Layer (EL), such as the Apple TV 4K (with Plex or Infuse), Nvidia Shield (to a certain extent), Zidoo, and other devices, preventing fallback to standard HDR10 and other issues. The result is a highly compatible file that can be played on a wide range of devices.
 
@@ -106,6 +106,8 @@ The `-cleanup` command only deletes files with this extension, and includes a sa
 
 ## Installation
 
+
+
 ### Stable Release
 ```bash
 wget https://github.com/cryptochrome/dovi_convert/releases/latest/download/dovi_convert.sh
@@ -125,6 +127,43 @@ sudo mv dovi_convert.py /usr/local/bin/dovi_convert
 
 > [!IMPORTANT]
 > This is a beta release. Report issues on [GitHub](https://github.com/cryptochrome/dovi_convert/issues).
+
+### Docker Container
+The container provides a **Web Terminal** interface, allowing you to run the tool from any browser.
+
+***Note*** If you need to run the container with a specific user ID, you can set the `PUID` and `PGID` environment variables to match what you need. Example provided below. If you don't provide these, the container will run with UID/GID 1000.
+
+#### Stable (Latest)
+```bash
+docker run -d \
+  --name=dovi_convert \
+  -e PUID=1000 \
+  -e PGID=1000 \
+  -e TZ=Europe/Berlin \
+  -p 7681:7681 \
+  -v /path/to/media:/data \
+  --restart unless-stopped \
+  cryptochrome/dovi_convert:latest
+```
+
+#### Beta (Python Rewrite)
+```bash
+docker run -d \
+  --name=dovi_convert_beta \
+  -e PUID=1000 \
+  -e PGID=1000 \
+  -e TZ=Europe/Berlin \
+  -p 7681:7681 \
+  -v /path/to/media:/data \
+  --restart unless-stopped \
+  cryptochrome/dovi_convert:beta
+```
+
+Access the tool at `http://<your docker host>:7681`.
+
+### Docker Compose
+
+A `docker-compose.yml` example is included in the repository.
 
 ## Usage
 
