@@ -28,7 +28,6 @@ Converting Dolby Vision Profile 7 with FEL to Profile 8.1 is always a compromise
     - [4. Batch Processing (-batch)](#4-batch-processing--batch)
     - [5. Cleanup (-cleanup)](#5-cleanup--cleanup)
     - [6. Update Check (-update-check)](#6-update-check--update-check)
-    - [7. NAS Usage](#7-nas-usage)
 - [Troubleshooting](#troubleshooting)
 - [Caveats and Notes](#caveats-and-notes)
 
@@ -250,16 +249,6 @@ The tool checks for updates in the background. A notification appears on the nex
 ```bash
 dovi_convert -update-check    # Check immediately
 ```
-
-
-### 7. NAS Usage
-
-If your media library is on a NAS and your system supports running bash scripts with the required dependencies, consider running the script directly on the NAS.
-
-**Why?** The script processes large files (50-80 GB). On slower networks (1 GbE, WiFi), a single conversion can take 15-20 minutes due to network overhead. Running locally eliminates this bottleneck.
-
-**Note:** A Docker container for NAS deployment is on the [roadmap](ROADMAP.md).
-
 
 ## Troubleshooting
 
