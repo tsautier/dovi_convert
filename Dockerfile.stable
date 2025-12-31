@@ -58,14 +58,24 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nano \
     file \
     less \
+    locales \
     bash-completion \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && echo "en_US.UTF-8 UTF-8" > /etc/locale.gen \
+    && locale-gen en_US.UTF-8
+
+ENV LANG=en_US.UTF-8
+ENV LANGUAGE=en_US:en
+ENV LC_ALL=en_US.UTF-8
 
 # =============================================================================
 # Install ttyd (web terminal)
 # =============================================================================
-ARG TTYD_VERSION=1.7.7
+# =============================================================================
+# Install ttyd (web terminal)
+# =============================================================================
+ARG TTYD_VERSION
 ARG TARGETARCH
 
 RUN case "${TARGETARCH}" in \
@@ -80,7 +90,7 @@ RUN case "${TARGETARCH}" in \
 # =============================================================================
 # Install dovi_tool
 # =============================================================================
-ARG DOVI_TOOL_VERSION=2.1.3
+ARG DOVI_TOOL_VERSION
 # TARGETARCH is inherited
 
 RUN case "${TARGETARCH}" in \
@@ -104,6 +114,7 @@ RUN chmod +x /app/dovi_convert.sh
 
 # Create symlink so it's available as a command
 RUN ln -s /app/dovi_convert.sh /usr/local/bin/dovi_convert
+RUN ln -s /usr/local/bin/dovi_convert /usr/local/bin/dovi
 
 # =============================================================================
 # Create data volume mount point
@@ -157,9 +168,10 @@ echo "User: dovi (PUID=${PUID}, PGID=${PGID})"
 exec gosu dovi ttyd \
     --port 7681 \
     --writable \
-    -t "theme={'background':'#282a36','foreground':'#f8f8f2','cursor':'#50fa7b'}" \
-    -t "fontSize=15" \
-    -t "fontFamily='Menlo, Monaco, Consolas, monospace'" \
+    -t "theme={'background': '#1e1e2e', 'foreground': '#cdd6f4', 'cursor': '#f5e0dc', 'selection': '#585b70', 'black': '#45475a', 'red': '#f38ba8', 'green': '#a6e3a1', 'yellow': '#f9e2af', 'blue': '#89b4fa', 'magenta': '#f5c2e7', 'cyan': '#94e2d5', 'white': '#bac2de', 'brightBlack': '#585b70', 'brightRed': '#f38ba8', 'brightGreen': '#a6e3a1', 'brightYellow': '#f9e2af', 'brightBlue': '#89b4fa', 'brightMagenta': '#f5c2e7', 'brightCyan': '#94e2d5', 'brightWhite': '#a6adc8'}" \
+    -t "fontSize=16" \
+    -t "fontFamily='JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Menlo', 'Consolas', 'DejaVu Sans Mono', 'Courier New', monospace" \
+    --debug 1 \
     bash /app/welcome.sh
 EOF
 RUN chmod +x /init
@@ -175,8 +187,8 @@ echo "║               dovi_convert Docker Container                  ║"
 echo "║                  v6.x (Stable Release)                       ║"
 echo "╠══════════════════════════════════════════════════════════════╣"
 echo "║  Usage:                                                      ║"
-echo "║    dovi_convert        # Show quick help                     ║"
-echo "║    dovi_convert -help  # Show full help text                 ║"
+echo "║    dovi (or dovi_convert) # Show quick help                  ║"
+echo "║    dovi -help             # Show full help text              ║"
 echo "║                                                              ║"
 echo "║  Your files are mounted at: /data                            ║"
 echo "║                                                              ║"
