@@ -2,12 +2,15 @@
 services:
   dovi_convert:
     image: cryptochrome/dovi_convert:latest
+    # IF YOU WANT TO RUN THE BETA, UNCOMMENT THE NEXT LINE, AND DELETE THE LINE ABOVE
+    # image: cryptochrome/dovi_convert:beta
     container_name: dovi_convert
     hostname: dovi-convert
 
     # =========================================================================
     # User/Group ID for file permissions
     # Set these to match your NAS user to avoid permission issues
+    # Uses 1000 by default
     # =========================================================================
     environment:
       - PUID=1000 # Your user ID (run 'id' to find)
@@ -19,7 +22,7 @@ services:
     # =========================================================================
     volumes:
       # Mount your media folder(s) here
-      # Format: /path/on/host:/path/in/container
+      # Format: /path/on/host:/data
       - /mnt/media/movies:/data/movies
       - /mnt/media/tv:/data/tv
       # =========================================================================
