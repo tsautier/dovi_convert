@@ -1679,7 +1679,7 @@ class DoviConvertApp:
     def _print_simple_fel_advisory(self) -> None:
         """Print the Simple FEL advisory block."""
         print("=" * 96)
-        print(f"{CYAN}*{RESET}{BOLD}ADVISORY: UNDERSTANDING 'SIMPLE' (CYAN) VERDICTS{RESET}")
+        print(f"{RED}*{RESET}{BOLD}ADVISORY: UNDERSTANDING 'SIMPLE' (CYAN) VERDICTS{RESET}")
         print("-" * 96)
         print(f"{BOLD}What is 'Simple FEL'?{RESET}")
         print("It means the scan detected no active brightness expansion over the Base Layer. This")
@@ -2260,7 +2260,7 @@ class DoviConvertApp:
             return
             
         # 3. Export Metadata
-        spinner = Spinner("Exporting Metadata (Slow)... ")
+        spinner = Spinner("Exporting Metadata... ")
         spinner.start()
         
         ret, _, _ = self.media.run_logged(

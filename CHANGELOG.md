@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Internal Optimization:** Refactored core analysis commands to improve stability and make future feature updates safer.
+- **Error Handling:** Improved detection and handling of MediaInfo-related issues.
+- **Windows:** Added a startup warning if the input file path exceeds the OS limit (255 characters).
+- **UI:** Removed misleading "(Slow)" label from export step and improved color contrast in scan advisory.
 
 ## [v7.0.0-beta4] - 2026-01-01
 ### Changed
