@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter (v7.0.0-beta3)
+dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter 
 
 DESCRIPTION:
   Automates conversion of Dolby Vision Profile 7 MKV files (UHD Blu-ray)
