@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Process Safety:** Fixed an issue where the `-inspect` command could potentially give a false "safe" verdict if one of the internal tools crashed silently. It now correctly reports a failure in this scenario.
 
+### Changed
+- **Internal Optimization:** Refactored core analysis commands to improve stability and make future feature updates safer.
+
 ## [v7.0.0-beta4] - 2026-01-01
 ### Changed
 - Significantly reduced memory usage and improved speed during `-inspect` analysis (Streaming Parser).

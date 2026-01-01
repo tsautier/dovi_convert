@@ -19,3 +19,7 @@ project\ files/
 # Internal Agent Configuration
 .agent/
 .testfiles
+
+# Python cache files
+__pycache__
+
