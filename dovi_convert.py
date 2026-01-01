@@ -748,6 +748,18 @@ class DoviConvertApp:
     
     def __init__(self, config: Config):
         self.config = config
+        
+        # Check for Windows long path limitation
+        if os.name == 'nt' and self.config.input_file:
+            try:
+                abs_path = self.config.input_file.resolve()
+                if len(str(abs_path)) > 255:
+                    print(f"{YELLOW}WARNING: Input file path is very long (>255 chars).{RESET}")
+                    print(f"{YELLOW}         Windows may fail to process this file due to OS limitations.{RESET}")
+                    print(f"{YELLOW}         Recommendation: Move the file to a shorter path (e.g. C:\\Data).{RESET}\n")
+            except Exception:
+                pass
+        
         self.media = MediaToolWrapper(debug_mode=config.debug_mode)
         self.batch_running = False
         self.abort_requested = False
@@ -1196,7 +1208,7 @@ class DoviConvertApp:
             return (f"{RED}Error: mkvmerge failed (Check Locale/Install){RESET}", "ERROR")
 
         if mi == "MEDIAINFO_FAIL":
-            return (f"{RED}Error: MediaInfo failed (Check version/path){RESET}", "ERROR")
+            return (f"{RED}Error: MediaInfo failed (Check file inputs or installation){RESET}", "ERROR")
         
         # Decision matrix
         if "dvhe.07" in mi or "Profile 7" in mi:
