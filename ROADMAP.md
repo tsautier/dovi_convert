@@ -30,6 +30,9 @@ Reduce false positives in Complex FEL detection by adjusting the brightness thre
 ### Custom Output Path
 Support `-o /path` flag to write converted files to a different directory. Enables automation workflows (Automator, watch folders) without re-trigger issues.
 
+### Temporary Directory Support
+Option to use a separate drive (like an SSD) for intermediate files. This avoids read/write bottleneck when converting files stored on mechanical hard drives, significantly improving speed.
+
 ---
 
 ## Under Consideration
