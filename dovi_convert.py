@@ -606,6 +606,19 @@ class MediaToolWrapper:
                 capture_output=True,
                 text=True
             )
+            if result.returncode != 0:
+                info.mi_info_string = "MEDIAINFO_FAIL"
+                if self.debug_mode:
+                    self.log(f"MediaInfo Error (Code {result.returncode}): {result.stderr}")
+                return info
+            
+            # Check for empty output
+            if not result.stdout.strip():
+                info.mi_info_string = "MEDIAINFO_FAIL"
+                if self.debug_mode:
+                    self.log("MediaInfo Error: Empty stdout result")
+                return info
+
             mi_json = json.loads(result.stdout)
             
             for track in mi_json.get("media", {}).get("track", []):
@@ -621,8 +634,11 @@ class MediaToolWrapper:
                         info.frame_count = 0
                     break
                     
-        except Exception:
-            pass
+        except Exception as e:
+            info.mi_info_string = "MEDIAINFO_FAIL"
+            if self.debug_mode:
+                self.log(f"MediaInfo Exception: {e}")
+            return info
         
         return info
 
@@ -1178,6 +1194,9 @@ class DoviConvertApp:
         
         if mi == "MKVMERGE_FAIL":
             return (f"{RED}Error: mkvmerge failed (Check Locale/Install){RESET}", "ERROR")
+
+        if mi == "MEDIAINFO_FAIL":
+            return (f"{RED}Error: MediaInfo failed (Check version/path){RESET}", "ERROR")
         
         # Decision matrix
         if "dvhe.07" in mi or "Profile 7" in mi:
