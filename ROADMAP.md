@@ -27,9 +27,6 @@ Add `-samples N` flag to increase sampling during FEL analysis. Default remains 
 ### FEL Threshold Adjustment  
 Reduce false positives in Complex FEL detection by adjusting the brightness threshold. Add `-threshold N` flag for power users who want to fine-tune detection sensitivity.
 
-### Docker Container
-Lightweight, plug-and-play container with all dependencies pre-packaged. Target platforms: Unraid, TrueNAS, Synology, QNAP, and any Docker-compatible NAS. Automated builds via GitHub Actions. Possibly with a web based shell (ttyd + XTerm.js)
-
 ### Custom Output Path
 Support `-o /path` flag to write converted files to a different directory. Enables automation workflows (Automator, watch folders) without re-trigger issues.
 
