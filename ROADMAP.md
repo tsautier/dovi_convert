@@ -15,8 +15,11 @@ What started as a simple idea has grown into a 2000-line Bash script. Before add
 
 ## Planned
 
-### Convert to HDR10
-New command to convert Complex FEL files to pure HDR10 instead of Profile 8.1, by stripping the Dolby Vision layers entirely and only retaining the HDR10 base layer. Useful for Complex FEL files where standard conversion would cause incorrect tone mapping. Includes optional backup of removed DV layers for future restoration.
+### Convert to HDR10 (Strip DV)
+Command to convert P7 files to pure, spec-compliant HDR10 by completely removing Dolby Vision metadata. Ideal for Complex FEL titles where P8.1 conversion is undesirable.
+
+### Backup & Restore
+Dedicated feature to backup original Dolby Vision layers (EL + RPU) into compact `.dovi` archives before conversion. This enables you to convert to P8.1 or HDR10 and delete the original, while retaining the ability to bit-perfectly restore the full Profile 7 source later (e.g., for future FEL-capable hardware). Saves ~90% disk space compared to keeping full backups (~10GB vs ~80GB).
 
 ### Configurable Scan Samples for -scan
 Add `-samples N` flag to increase sampling during FEL analysis. Default remains 10; users can set 10-30 for taking more samples and improving the detection of brightness expansion - at the cost of longer processing time. `-inspect`remains the go to option for detailed analysis.
@@ -33,9 +36,6 @@ Support `-o /path` flag to write converted files to a different directory. Enabl
 ---
 
 ## Under Consideration
-
-### HDR10 Restoration from Backup
-Automated command to restore full Profile 7 FEL from HDR10 output + saved DV layer backups. Depends on "Convert to HDR10" feature.
 
 ### Web Interface (Docker Phase 2)
 Browser-based management UI for NAS users: visual file browser, batch selection, live progress monitoring, and backup management. Depends on Docker container release.
