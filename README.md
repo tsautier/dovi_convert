@@ -119,7 +119,7 @@ sudo mv dovi_convert.sh /usr/local/bin/dovi_convert
 The Python version requires **Python 3.8+** and standard media tools (`ffmpeg`, `mkvtoolnix`, `dovi_tool`, `mediainfo`).
 
 ```bash
-wget https://github.com/cryptochrome/dovi_convert/releases/download/v7.0.0-beta4/dovi_convert.py
+wget https://github.com/cryptochrome/dovi_convert/releases/download/v7.0.0-beta5/dovi_convert.py
 chmod +x dovi_convert.py
 sudo mv dovi_convert.py /usr/local/bin/dovi_convert
 ```
