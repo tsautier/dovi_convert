@@ -31,7 +31,7 @@ from typing import List, Optional, Tuple
 # CONSTANTS
 # =============================================================================
 
-VERSION = "7.0.0-beta4"
+VERSION = "7.0.0-beta5"
 REPO_URL = "https://api.github.com/repos/cryptochrome/dovi_convert/releases/latest"
 
 # ANSI Colors
@@ -1378,8 +1378,8 @@ class DoviConvertApp:
             return 130
         return ret
     
-    def cmd_convert(self, filepath: Path, mode: str = "manual") -> int:
-        """Convert a single file. Returns 0=success, 1=error, 2=skip, 130=abort."""
+    def _convert_validate(self, filepath: Path, mode: str) -> Optional[int]:
+        """Validate if file is ready for conversion. Returns return_code if should stop, None if ok."""
         if not filepath.exists():
             print(f"File not found: {filepath}")
             return 1
@@ -1418,9 +1418,11 @@ class DoviConvertApp:
                 return 2
             print(f"{RED}Error: Input file is not a Dolby Vision Profile 7 file.{RESET}")
             return 1
-        
-        print(f"{BOLD}Processing:{RESET} {filepath}")
-        
+            
+        return None
+
+    def _convert_setup_paths(self, filepath: Path) -> Optional[Tuple[Path, Path, Path]]:
+        """Setup paths. Returns (conv_hevc, temp_mkv, backup_mkv) or None on error."""
         base_name = filepath.stem
         conv_hevc = filepath.with_name(f"{base_name}.p81.hevc")
         temp_mkv = filepath.with_name(f"{base_name}.p81.mkv")
@@ -1430,33 +1432,24 @@ class DoviConvertApp:
         
         if backup_mkv.exists():
             print(f"{RED}Skipping: Backup file already exists.{RESET}")
-            return 1
-        
-        # Get FPS for muxing
-        fps_orig = self.media.get_fps(filepath)
-        if not fps_orig:
-            print(f"{RED}Error: Could not detect Frame Rate.{RESET}")
-            return 1
-        
-        # Initialize metrics
-        start_time = time.time()
-        orig_size = get_file_size(filepath)
-        
-        # Step 1 & 2: Conversion
-        conversion_done = False
-        
+            return None
+            
+        return conv_hevc, temp_mkv, backup_mkv
+
+    def _convert_perform_conversion(self, filepath: Path, conv_hevc: Path) -> int:
+        """Run the actual conversion. Returns 0=success, 1=fail, 130=abort."""
         if self.config.safe_mode:
             if self.convert_legacy(filepath, conv_hevc) != 0:
                 if self.abort_requested:
                     return 130
                 print(f"{RED}Safe Mode Failed.{RESET}")
                 return 1
-            conversion_done = True
+            return 0
         else:
             turbo_res, fail_reason = self.convert_turbo(filepath, conv_hevc)
             
             if turbo_res == 0:
-                conversion_done = True
+                return 0
             elif turbo_res == 130 or self.abort_requested:
                 return 130
             else:
@@ -1486,12 +1479,10 @@ class DoviConvertApp:
                             return 130
                         print(f"{RED}Safe Mode also failed.{RESET}")
                         return 1
-                    conversion_done = True
-        
-        if not conversion_done:
-            return 1
-        
-        # Step 3: Muxing
+                    return 0
+
+    def _convert_mux(self, filepath: Path, conv_hevc: Path, temp_mkv: Path, fps_orig: str) -> int:
+        """Mux the new file. Returns 0=success, 1=fail, 130=abort."""
         mux_args = ["-o", str(temp_mkv)]
         
         if self.video_info and self.video_info.delay != 0:
@@ -1519,7 +1510,10 @@ class DoviConvertApp:
             return 1
         
         print(f"\r\033[K[2/3] Muxing (Cloning Metadata + {fps_orig}fps)... Done.")
-        
+        return 0
+
+    def _convert_finalize(self, filepath: Path, temp_mkv: Path, backup_mkv: Path, conv_hevc: Path, start_time: float, orig_size: int) -> int:
+        """Verify, swap and print metrics. Returns 0=success, 1=fail."""
         # Step 4: Verification
         spinner = Spinner("[3/3] Verifying... ")
         spinner.start()
@@ -1549,6 +1543,45 @@ class DoviConvertApp:
         
         conv_hevc.unlink(missing_ok=True)
         return 0
+
+    
+    def cmd_convert(self, filepath: Path, mode: str = "manual") -> int:
+        """Convert a single file. Returns 0=success, 1=error, 2=skip, 130=abort."""
+        
+        # 1. Validation
+        res = self._convert_validate(filepath, mode)
+        if res is not None:
+            return res
+            
+        print(f"{BOLD}Processing:{RESET} {filepath}")
+        
+        # 2. Setup (Get FPS and paths)
+        fps_orig = self.media.get_fps(filepath)
+        if not fps_orig:
+            print(f"{RED}Error: Could not detect Frame Rate.{RESET}")
+            return 1
+            
+        paths = self._convert_setup_paths(filepath)
+        if not paths:
+            return 1
+        conv_hevc, temp_mkv, backup_mkv = paths
+        
+        # Initialize metrics
+        start_time = time.time()
+        orig_size = get_file_size(filepath)
+        
+        # 3. Conversion
+        res = self._convert_perform_conversion(filepath, conv_hevc)
+        if res != 0:
+            return res
+            
+        # 4. Muxing
+        res = self._convert_mux(filepath, conv_hevc, temp_mkv, fps_orig)
+        if res != 0:
+            return res
+            
+        # 5. Finalize
+        return self._convert_finalize(filepath, temp_mkv, backup_mkv, conv_hevc, start_time, orig_size)
     
     def cmd_check_single(self, filepath: Path) -> None:
         """Scan and report on a single file."""
@@ -1910,30 +1943,8 @@ class DoviConvertApp:
         else:
             print("Cancelled.")
     
-    def cmd_inspect(self, filepath: Path) -> None:
-        """Full frame-by-frame RPU inspection."""
-        if not filepath.exists():
-            print(f"{RED}Error: File '{filepath}' not found.{RESET}")
-            return
-        
-        # Basic validation
-        self.video_info = self.media.get_video_info(filepath)
-        mi = self.video_info.mi_info_string
-        
-        if "dvhe.07" not in mi and "Profile 7" not in mi:
-            print(f"{RED}Error: File is not Dolby Vision Profile 7.{RESET}")
-            print(f"Detected: {self.dovi_status} (Info: {mi})")
-            return
-        
-        print()
-        print("=" * 51)
-        print("FULL RPU STRUCTURE INSPECTION")
-        print("=" * 51)
-        print(f"File:       {BOLD}{filepath.name}{RESET}")
-        print("Format:     DV Profile 7 (Scanning...)")
-        print("---------------------------------------------------")
-        
-        # MEL Fast-Pass
+    def _inspect_mel_fast_pass(self, filepath: Path) -> bool:
+        """Run a quick check for MEL to avoid full scan if possible. Returns True if MEL detected."""
         spinner = Spinner("Checking EL Structure (Pre-Flight)... ")
         spinner.start()
         
@@ -1986,15 +1997,15 @@ class DoviConvertApp:
             print("Absolutely safe to convert.")
             print("=" * 51)
             print()
-            return
+            return True
         
         print(f"\r\033[KChecking EL Structure... Done (FEL Detected - Proceeding).")
-        
-        temp_rpu = filepath.parent / f"inspect_{int(time.time())}_{os.getpid()}.rpu"
-        temp_json = filepath.parent / f"inspect_{int(time.time())}_{os.getpid()}.json"
+        return False
+
+    def _inspect_extract_rpu_loop(self, filepath: Path, temp_rpu: Path) -> bool:
+        """Handle RPU extraction with retry logic. Returns True on success."""
         use_safe_mode = self.config.safe_mode
         
-        # Extract full RPU
         while True:
             if not use_safe_mode:
                 spinner = Spinner("Extracting RPU... ")
@@ -2017,10 +2028,18 @@ class DoviConvertApp:
                     )
                     
                     ffmpeg_proc.stdout.close()
-                    dovi_proc.communicate()
-                    ffmpeg_proc.wait()
+                    _, dovi_stderr = dovi_proc.communicate()
+                    _, ffmpeg_stderr = ffmpeg_proc.communicate()
                     
-                    status = dovi_proc.returncode
+                    ffmpeg_status = ffmpeg_proc.returncode
+                    dovi_status = dovi_proc.returncode
+                    
+                    if ffmpeg_status != 0:
+                        status = 1
+                        if self.config.debug_mode:
+                            self.media.log(f"ffmpeg failed: {ffmpeg_stderr.decode() if ffmpeg_stderr else 'Unknown error'}")
+                    else:
+                        status = dovi_status
                 except Exception:
                     status = 1
                 
@@ -2028,7 +2047,7 @@ class DoviConvertApp:
                 
                 if status == 0 and temp_rpu.exists() and temp_rpu.stat().st_size > 0:
                     print(f"\r\033[KExtracting RPU... Done.")
-                    break
+                    return True
                 else:
                     print(f"\r\033[KExtracting RPU... {RED}Failed.{RESET}")
                     temp_rpu.unlink(missing_ok=True)
@@ -2047,7 +2066,7 @@ class DoviConvertApp:
                             continue
                         else:
                             print(f"{RED}Aborted.{RESET}")
-                            return
+                            return False
             else:
                 raw_temp = filepath.parent / f"inspect_temp_{int(time.time())}_{os.getpid()}.hevc"
                 
@@ -2062,7 +2081,7 @@ class DoviConvertApp:
                 if ret != 0:
                     print(f"\n{RED}Extracting Track Failed.{RESET}")
                     raw_temp.unlink(missing_ok=True)
-                    return
+                    return False
                 
                 print(f"\r\033[KExtracting Track... Done.")
                 
@@ -2077,30 +2096,14 @@ class DoviConvertApp:
                 
                 if ret == 0 and temp_rpu.exists() and temp_rpu.stat().st_size > 0:
                     print(f"\r\033[KExtracting RPU... Done.")
-                    break
+                    return True
                 else:
                     print(f"\n{RED}RPU Extraction Failed.{RESET}")
                     temp_rpu.unlink(missing_ok=True)
-                    return
-        
-        # Export to JSON
-        spinner = Spinner("Exporting Metadata (Slow)... ")
-        spinner.start()
-        
-        ret, _, _ = self.media.run_logged(
-            ["dovi_tool", "export", "-i", str(temp_rpu), "-d", f"all={temp_json}"]
-        )
-        spinner.stop()
-        temp_rpu.unlink(missing_ok=True)
-        
-        if ret != 0 or not temp_json.exists() or temp_json.stat().st_size == 0:
-            print(f"\r\033[KExporting Metadata... {RED}Failed.{RESET}")
-            temp_json.unlink(missing_ok=True)
-            return
-        
-        print(f"\r\033[KExporting Metadata... Done.")
-        
-        # Analyze statistics
+                    return False
+
+    def _inspect_analyze_peak(self, temp_json: Path) -> Tuple[int, int]:
+        """Analyze L1 metadata for peak brightness. Returns (peak_nits, frame_count)."""
         spinner = Spinner("Calculating Peak Brightness (99.9th)... ")
         spinner.start()
         
@@ -2109,16 +2112,14 @@ class DoviConvertApp:
             max_vals = self._extract_l1_stream(temp_json)
             
             if not max_vals:
-                # 2. Fallback to Deep JSON Parse (High Memory but robust structure aware)
+                # 2. Fallback to Deep JSON Parse
                 if self.config.debug_mode:
                     print(f"\n{YELLOW}[!] Fast stream scan failed. Falling back to deep JSON parse...{RESET}")
                 
                 json_content = temp_json.read_text()
                 data = json.loads(json_content)
                 
-                # Find all L1 max values
                 max_vals = []
-                
                 def find_l1(obj):
                     if isinstance(obj, dict):
                         for key in ["Level1", "l1", "L1"]:
@@ -2137,8 +2138,8 @@ class DoviConvertApp:
                             find_l1(item)
                 
                 find_l1(data)
-            max_vals.sort()
             
+            max_vals.sort()
             frame_count = len(max_vals)
             if frame_count > 0:
                 idx = int(frame_count * 0.999)
@@ -2146,20 +2147,21 @@ class DoviConvertApp:
             else:
                 robust_peak = 0
                 
-        except Exception as e:
+        except Exception:
             frame_count = 0
             robust_peak = 0
         
         spinner.stop()
-        temp_json.unlink(missing_ok=True)
         
-        # Convert to nits
         if robust_peak > 0:
             robust_peak = pq_to_nits(robust_peak)
-        
+            
+        return robust_peak, frame_count
+
+    def _inspect_print_report(self, filepath: Path, peak_nits: int, frame_count: int) -> None:
+        """Print the final inspection report."""
         print(f"\r\033[KCalculating Peak Brightness... Done.")
         
-        # Verdict logic
         bl_peak = self.media.get_bl_peak(filepath)
         threshold = bl_peak + 50
         
@@ -2167,34 +2169,89 @@ class DoviConvertApp:
             verdict = f"{YELLOW}NO L1 METADATA{RESET}"
             advisory = f"{RED}WARNING:{RESET} No valid L1 brightness metadata found in FEL.\nThis is unusual for non-MEL files. Proceed with caution."
             robust_peak_str = "N/A"
-            diff_str = "N/A"
-        elif robust_peak > threshold:
+        elif peak_nits > threshold:
             verdict = f"{RED}COMPLEX FEL (Active Brightness Expansion){RESET}"
-            diff = robust_peak - bl_peak
-            advisory = f"{BOLD}ADVISORY:{RESET}\nFEL Peak ({robust_peak} nits) exceeds Base Layer ({bl_peak} nits).\nThis indicates active brightness expansion in the FEL.\nConversion will likely cause clipping or tone-mapping errors."
-            robust_peak_str = str(robust_peak)
-            diff_str = f"+{diff}"
+            diff = peak_nits - bl_peak
+            advisory = f"{BOLD}ADVISORY:{RESET}\nFEL Peak ({peak_nits} nits) exceeds Base Layer ({bl_peak} nits).\nThis indicates active brightness expansion in the FEL.\nConversion will likely cause clipping or tone-mapping errors."
+            robust_peak_str = str(peak_nits)
         else:
             verdict = f"{GREEN}SIMPLE / SAFE{RESET}"
-            advisory = f"{BOLD}ADVISORY:{RESET}\nFEL Peak ({robust_peak} nits) is within safe range of Base Layer ({bl_peak} nits).\nSafe to convert."
-            robust_peak_str = str(robust_peak)
-            diff_str = "None"
+            advisory = f"{BOLD}ADVISORY:{RESET}\nFEL Peak ({peak_nits} nits) is within safe range of Base Layer ({bl_peak} nits).\nSafe to convert."
+            robust_peak_str = str(peak_nits)
         
         print(f"{'Base Layer Peak (MDL):':<22} {bl_peak} nits")
         print(f"{'L1 Analysis:':<22} {frame_count} frames analyzed")
         print(f"{'FEL Peak Brightness:':<22} {robust_peak_str} nits")
         
-        if isinstance(robust_peak, int) and robust_peak > threshold:
-            print(f"{'Brightness Expansion:':<22} {RED}+{robust_peak - bl_peak} nits (Active){RESET}")
+        if isinstance(peak_nits, int) and peak_nits > threshold:
+            print(f"{'Brightness Expansion:':<22} {RED}+{peak_nits - bl_peak} nits (Active){RESET}")
         else:
             print(f"{'Brightness Expansion:':<22} {GREEN}None (Safe){RESET}")
+            print("---------------------------------------------------")
+            print(f"{BOLD}VERDICT:{RESET}    {verdict}")
+            print("---------------------------------------------------")
+            print(advisory)
+            print("=" * 51)
+            print()
+
+    def cmd_inspect(self, filepath: Path) -> None:
+        """Full frame-by-frame RPU inspection."""
+        if not filepath.exists():
+            print(f"{RED}Error: File '{filepath}' not found.{RESET}")
+            return
         
-        print("---------------------------------------------------")
-        print(f"{BOLD}VERDICT:{RESET}    {verdict}")
-        print("---------------------------------------------------")
-        print(advisory)
-        print("=" * 51)
+        # Basic validation
+        self.video_info = self.media.get_video_info(filepath)
+        mi = self.video_info.mi_info_string
+        
+        if "dvhe.07" not in mi and "Profile 7" not in mi:
+            print(f"{RED}Error: File is not Dolby Vision Profile 7.{RESET}")
+            print(f"Detected: {self.dovi_status} (Info: {mi})")
+            return
+        
         print()
+        print("=" * 51)
+        print("FULL RPU STRUCTURE INSPECTION")
+        print("=" * 51)
+        print(f"File:       {BOLD}{filepath.name}{RESET}")
+        print("Format:     DV Profile 7 (Scanning...)")
+        print("---------------------------------------------------")
+        
+        # 1. MEL Fast Pass
+        if self._inspect_mel_fast_pass(filepath):
+            return
+            
+        # 2. Extract RPU
+        temp_rpu = filepath.parent / f"inspect_{int(time.time())}_{os.getpid()}.rpu"
+        temp_json = filepath.parent / f"inspect_{int(time.time())}_{os.getpid()}.json"
+        
+        if not self._inspect_extract_rpu_loop(filepath, temp_rpu):
+            return
+            
+        # 3. Export Metadata
+        spinner = Spinner("Exporting Metadata (Slow)... ")
+        spinner.start()
+        
+        ret, _, _ = self.media.run_logged(
+            ["dovi_tool", "export", "-i", str(temp_rpu), "-d", f"all={temp_json}"]
+        )
+        
+        spinner.stop()
+        temp_rpu.unlink(missing_ok=True)
+        
+        if ret != 0 or not temp_json.exists() or temp_json.stat().st_size == 0:
+            print(f"\r\033[KExporting Metadata... {RED}Failed.{RESET}")
+            temp_json.unlink(missing_ok=True)
+            return
+        
+        print(f"\r\033[KExporting Metadata... Done.")
+        
+        # 4. Analyze
+        peak_nits, frame_count = self._inspect_analyze_peak(temp_json)
+        temp_json.unlink(missing_ok=True)
+        
+        # 5. Print Report
+        self._inspect_print_report(filepath, peak_nits, frame_count)
 
 
 # =============================================================================
