@@ -31,7 +31,7 @@ from typing import List, Optional, Tuple
 # CONSTANTS
 # =============================================================================
 
-VERSION = "7.0.0-beta3"
+VERSION = "7.0.0-beta4"
 REPO_URL = "https://api.github.com/repos/cryptochrome/dovi_convert/releases/latest"
 
 # ANSI Colors
@@ -1127,6 +1127,32 @@ class DoviConvertApp:
             return max(max_vals) if max_vals else None
         except Exception:
             return None
+
+    def _extract_l1_stream(self, json_path: Path) -> List[int]:
+        """
+        Stream parser for RPU JSON. 
+        Extracts 'max_pq' values line-by-line using low memory.
+        """
+        max_vals = []
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    if "max_pq" in line:
+                        # Expected format: "max_pq": 1234, or similar
+                        # We use simple splitting to be robust against whitespace
+                        try:
+                            parts = line.split(":")
+                            if len(parts) >= 2:
+                                # Get the part after the colon, strip comma and whitespace
+                                val_str = parts[1].strip().rstrip(",")
+                                max_vals.append(int(val_str))
+                        except (ValueError, IndexError):
+                            continue
+        except Exception:
+            return []
+        
+        return max_vals
+
     
     def _cleanup_probe_files(self, files: List[Path]) -> None:
         """Clean up specific probe files."""
@@ -1971,7 +1997,7 @@ class DoviConvertApp:
         # Extract full RPU
         while True:
             if not use_safe_mode:
-                spinner = Spinner("Extracting RPU (Standard Pipe)... ")
+                spinner = Spinner("Extracting RPU... ")
                 spinner.start()
                 
                 try:
@@ -2079,30 +2105,38 @@ class DoviConvertApp:
         spinner.start()
         
         try:
-            json_content = temp_json.read_text()
-            data = json.loads(json_content)
+            # 1. Try Fast Stream Parser (Low Memory)
+            max_vals = self._extract_l1_stream(temp_json)
             
-            # Find all L1 max values
-            max_vals = []
-            
-            def find_l1(obj):
-                if isinstance(obj, dict):
-                    for key in ["Level1", "l1", "L1"]:
-                        if key in obj:
-                            l1_data = obj[key]
-                            if isinstance(l1_data, dict):
-                                for mkey in ["max_pq", "max", "Max"]:
-                                    if mkey in l1_data:
-                                        val = l1_data[mkey]
-                                        if isinstance(val, (int, float)):
-                                            max_vals.append(int(val))
-                    for v in obj.values():
-                        find_l1(v)
-                elif isinstance(obj, list):
-                    for item in obj:
-                        find_l1(item)
-            
-            find_l1(data)
+            if not max_vals:
+                # 2. Fallback to Deep JSON Parse (High Memory but robust structure aware)
+                if self.config.debug_mode:
+                    print(f"\n{YELLOW}[!] Fast stream scan failed. Falling back to deep JSON parse...{RESET}")
+                
+                json_content = temp_json.read_text()
+                data = json.loads(json_content)
+                
+                # Find all L1 max values
+                max_vals = []
+                
+                def find_l1(obj):
+                    if isinstance(obj, dict):
+                        for key in ["Level1", "l1", "L1"]:
+                            if key in obj:
+                                l1_data = obj[key]
+                                if isinstance(l1_data, dict):
+                                    for mkey in ["max_pq", "max", "Max"]:
+                                        if mkey in l1_data:
+                                            val = l1_data[mkey]
+                                            if isinstance(val, (int, float)):
+                                                max_vals.append(int(val))
+                        for v in obj.values():
+                            find_l1(v)
+                    elif isinstance(obj, list):
+                        for item in obj:
+                            find_l1(item)
+                
+                find_l1(data)
             max_vals.sort()
             
             frame_count = len(max_vals)
