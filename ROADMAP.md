@@ -20,7 +20,7 @@ This document outlines planned future development for `dovi_convert`.
 
 - **Directory Grouping in Scan Output** — Group files by parent directory when running recursive scans (`-scan -r`). Makes large scan results easier to read by visually separating files from different folders.
 
-- **Scan Target Directories** — Allow specifying a target directory directly in commands (e.g., `dovi_convert -scan /path/to/movies`) instead of requiring `cd` into the directory first.
+- **Multi-Input Support** — Accept multiple files or directories as arguments. `-convert` will process multiple files sequentially; `-scan` and `-batch` will accept target directories (e.g., `dovi_convert -scan /movies /tv`). No more need to `cd` first. ([#17](https://github.com/cryptochrome/dovi_convert/issues/17))
 
 ## Under Consideration
 
