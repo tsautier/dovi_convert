@@ -4,8 +4,6 @@ This document outlines planned future development for `dovi_convert`.
 
 > **Note:** This roadmap is subject to change based on user feedback and technical feasibility.
 
----
-
 ## Planned
 
 - **Convert to HDR10 (Strip DV)** — Command to convert P7 files to pure, spec-compliant HDR10 by completely removing Dolby Vision metadata. Ideal for Complex FEL titles where P8.1 conversion is undesirable.
