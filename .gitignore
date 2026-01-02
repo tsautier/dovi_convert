@@ -23,3 +23,5 @@ project\ files/
 # Python cache files
 __pycache__
 
+# Linear API configuration
+.linear/
