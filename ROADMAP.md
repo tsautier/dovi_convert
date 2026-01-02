@@ -37,6 +37,9 @@ Option to use a separate drive (like an SSD) for intermediate files. This avoids
 
 ## Under Consideration
 
+### Auto-Inspect Simple FEL During Scan
+New `-inspect-simple` flag for `-scan` that automatically runs full inspection on all Simple FEL files after the scan completes. Eliminates the need to manually run `-inspect` on each file. ([#16](https://github.com/cryptochrome/dovi_convert/issues/16))
+
 ### Web Interface (Docker Phase 2)
 Browser-based management UI for NAS users: visual file browser, batch selection, live progress monitoring, and backup management. Depends on Docker container release.
 
