@@ -22,8 +22,6 @@ This document outlines planned future development for `dovi_convert`.
 
 - **Scan Target Directories** — Allow specifying a target directory directly in commands (e.g., `dovi_convert -scan /path/to/movies`) instead of requiring `cd` into the directory first.
 
----
-
 ## Under Consideration
 
 - **Auto-Inspect Simple FEL During Scan** — New `-inspect-simple` flag for `-scan` that automatically runs full inspection on all Simple FEL files after the scan completes. Eliminates the need to manually run `-inspect` on each file. ([#16](https://github.com/cryptochrome/dovi_convert/issues/16))
