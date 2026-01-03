@@ -75,9 +75,6 @@ ENV LC_ALL=en_US.UTF-8
 # =============================================================================
 # Install ttyd (web terminal) from GitHub releases
 # =============================================================================
-# =============================================================================
-# Install ttyd (web terminal) from GitHub releases
-# =============================================================================
 ARG TTYD_VERSION
 ARG TARGETARCH
 
@@ -187,7 +184,6 @@ COPY <<'EOF' /app/welcome.sh
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║               dovi_convert Docker Container                  ║"
-echo "║                      v7.x (Beta)                             ║"
 echo "╠══════════════════════════════════════════════════════════════╣"
 echo "║  Usage:                                                      ║"
 echo "║    dovi (or dovi_convert) # Show quick help                  ║"

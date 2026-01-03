@@ -2,8 +2,6 @@
 services:
   dovi_convert:
     image: cryptochrome/dovi_convert:latest
-    # IF YOU WANT TO RUN THE BETA, UNCOMMENT THE NEXT LINE, AND DELETE THE LINE ABOVE
-    # image: cryptochrome/dovi_convert:beta
     container_name: dovi_convert
     hostname: dovi-convert
 
