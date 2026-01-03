@@ -10,7 +10,7 @@ This document outlines planned future development for `dovi_convert`.
 
 ## Planned (in no particular order)
 
-- **Convert to HDR10 (Strip DV)** — Command to convert P7 files to pure, spec-compliant HDR10 by completely removing Dolby Vision metadata. Ideal for Complex FEL titles where P8.1 conversion is undesirable.
+- **Convert to HDR10 (Strip DV)** — Command to convert P7 files to pure, spec-compliant HDR10 by completely removing Dolby Vision metadata. Useful for Complex FEL titles where P8.1 conversion is undesirable and you are using a device that does not fallback to HDR (*cough* Shield *cough*).
 
 - **Backup & Restore** — Dedicated feature to backup original Dolby Vision layers (EL + RPU) into compact `.dovi` archives before conversion. This enables you to convert to P8.1 or HDR10 and delete the original, while retaining the ability to bit-perfectly restore the full Profile 7 source later (e.g., for future FEL-capable hardware). Saves ~90% disk space compared to keeping full backups (~10GB vs ~80GB).
 
