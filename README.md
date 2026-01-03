@@ -6,9 +6,10 @@ This conversion ensures compatibility with media players that do not support the
 
 Unlike other tools and "real-time converters" such as those built into Kodi (Dovi Compatibility Mode) or the Nvidia Shield, this tool analyzes the Dolby Vision enhancement layer to determine if it is actually safe to convert. This readme will explain the difference between the two approaches. 
 
-> [!NOTE]
-> **Python Rewrite Available (v7 Beta)**  
-> A complete Python rewrite is now available for testing. To try the beta, see [installation instructions](#beta-v7-python-rewrite).
+> [!IMPORTANT]
+> **Upgrading from v6.x?** v7.0.0 is a complete Python rewrite. Dependencies have changed — please ensure you have **Python 3.8+** installed and read the updated [Installation](#installation) instructions.
+>
+> **Docker users:** If you were testing the `:beta` tag, switch to `:latest`. The `:beta` tag will be deprecated.
 
 ### Important Note
 
@@ -90,13 +91,11 @@ The `-cleanup` command only deletes files with this extension, and includes a sa
 
 > **Important:** On macOS, use CLI versions installed via [Homebrew](https://brew.sh) or [MacPorts](https://www.macports.org/). GUI app bundles (MKVToolNix.app, MediaInfo.app) may not work.
 
+- Python 3.8+
 - ffmpeg
 - [dovi_tool](https://github.com/quietvoid/dovi_tool) (may require manual install)
 - mkvtoolnix (CLI: `mkvmerge`, `mkvextract`)
 - mediainfo (CLI version)
-- jq
-- bc
-- curl
 
 **Automatic Installation:** Missing dependencies are detected and can be installed via your system's package manager (Homebrew, apt, dnf, pacman).
 
@@ -107,32 +106,21 @@ The `-cleanup` command only deletes files with this extension, and includes a sa
 
 
 
-### Stable Release
-```bash
-curl -sSLO https://github.com/cryptochrome/dovi_convert/releases/latest/download/dovi_convert.sh
-chmod +x dovi_convert.sh
-sudo mv dovi_convert.sh /usr/local/bin/dovi_convert
-```
+### Download
 
-### Beta: v7 (Python Rewrite)
-
-The Python version requires **Python 3.8+** and standard media tools (`ffmpeg`, `mkvtoolnix`, `dovi_tool`, `mediainfo`).
+Requires **Python 3.8+** and the dependencies listed above.
 
 ```bash
-curl -sSLO https://github.com/cryptochrome/dovi_convert/releases/download/v7.0.0-beta5/dovi_convert.py
+curl -sSLO https://github.com/cryptochrome/dovi_convert/releases/latest/download/dovi_convert.py
 chmod +x dovi_convert.py
 sudo mv dovi_convert.py /usr/local/bin/dovi_convert
 ```
 
-> [!IMPORTANT]
-> This is a beta release. Report issues on [GitHub](https://github.com/cryptochrome/dovi_convert/issues).
-
 ### Docker Container
 The container provides a **Web Terminal** interface, allowing you to run the tool from any browser.
 
-***Note*** If you need to run the container with a specific user ID, you can set the `PUID` and `PGID` environment variables to match what you need. Example provided below. If you don't provide these, the container will run with UID/GID 1000.
+> **Note:** If you need to run the container with a specific user ID, set the `PUID` and `PGID` environment variables. Defaults to UID/GID 1000.
 
-#### Stable (Latest)
 ```bash
 docker run -d \
   --name=dovi_convert \
@@ -145,20 +133,7 @@ docker run -d \
   cryptochrome/dovi_convert:latest
 ```
 
-#### Beta (Python Rewrite)
-```bash
-docker run -d \
-  --name=dovi_convert_beta \
-  -e PUID=1000 \
-  -e PGID=1000 \
-  -e TZ=Europe/Berlin \
-  -p 7681:7681 \
-  -v /path/to/media:/data \
-  --restart unless-stopped \
-  cryptochrome/dovi_convert:beta
-```
-
-Access the tool at `http://<your docker host>:7681`.
+Access the tool at `http://<your_docker_host>:7681`.
 
 ### Docker Compose
 

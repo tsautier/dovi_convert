@@ -6,6 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [v7.0.0] - 2026-01-03 (Stable Release)
+
+> **This is a major release.** The tool has been completely rewritten in Python, replacing the original Bash script.
+
+### ⚠️ Breaking Changes
+- **Python 3.8+ is now required.** The Bash version is no longer maintained.
+- **Dependencies changed:** Removed `jq`, `bc`, `curl`. The script now only requires Python and core media tools.
+- **Docker:** The `:beta` tag will be deprecated. Switch to `:latest`.
+
+### ✨ Highlights (from Beta Cycle)
+- **Complete Python rewrite** for improved maintainability and cross-platform compatibility.
+- **5x faster** RPU analysis (`-inspect`) due to native Python processing with streaming parser.
+- **Reduced dependencies** — no more shell utilities like `jq`, `bc`, `curl`, `sed`, `awk`, or `grep`.
+- **Improved error handling** — better detection of tool failures and MediaInfo issues.
+- **Windows support** — added startup warning for file paths exceeding OS limits.
+
+### Fixed (since beta5)
+- Process safety improvements for `-inspect` command.
+
+### Note for Docker Users
+If you were using the `:beta` tag, please update to `:latest`. The `:beta` tag will be removed after a transition period.
+
+---
+
 ## [v7.0.0-beta5] - 2026-01-01
 ### Fixed
 - **Process Safety:** Fixed an issue where the `-inspect` command could potentially give a false "safe" verdict if one of the internal tools crashed silently. It now correctly reports a failure in this scenario.
