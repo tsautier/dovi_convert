@@ -13,11 +13,10 @@
 # macOS hidden files
 ._*
 
-# ignore project folder containing notes and other organizational files
-project\ files/
-
 # Internal Agent Configuration
 .agent/
+
+# test video files
 .testfiles
 
 # Python cache files
@@ -25,3 +24,6 @@ __pycache__
 
 # Linear API configuration
 .linear/
+
+# internal project docs
+.project_files/
