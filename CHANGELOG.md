@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
+## [v7.0.1] - 2026-01-04
+### Fixed
+- **Better Error Handling:** Fixed a bug where temporary files were not deleted if the script exited due to a conversion error (Ref #21).
+
+### Changed
+- **Conversion Verification:** Implemented a fallback mechanism for frame verification. If `MediaInfo` reports a frame mismatch (common with inaccurate source metadata), the script now double-checks using `ffprobe` stream analysis before failing (Ref #21).
+
 ## [v7.0.0] - 2026-01-03 (Stable Release)
 
 > **This is a major release.** The tool has been completely rewritten in Python, replacing the original Bash script.
@@ -20,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **5x faster** RPU analysis (`-inspect`) due to native Python processing with streaming parser.
 - **Reduced dependencies** — no more shell utilities like `jq`, `bc`, `curl`, `sed`, `awk`, or `grep`.
 - **Improved error handling** — better detection of tool failures and MediaInfo issues.
-- **Windows support** — added startup warning for file paths exceeding OS limits.
+- **WSL Required** — Native Windows is explicitly blocked. Windows users must use WSL2 or Docker.
 
 ### Fixed (since beta5)
 - Process safety improvements for `-inspect` command.
@@ -37,7 +44,7 @@ If you were using the `:beta` tag, please update to `:latest`. The `:beta` tag w
 ### Changed
 - **Internal Optimization:** Refactored core analysis commands to improve stability and make future feature updates safer.
 - **Error Handling:** Improved detection and handling of MediaInfo-related issues.
-- **Windows:** Added a startup warning if the input file path exceeds the OS limit (255 characters).
+- **Windows:** Added a hard error message when running on Native Windows (WSL required). Native Windows is not supported.
 - **UI:** Removed misleading "(Slow)" label from export step and improved color contrast in scan advisory.
 
 ## [v7.0.0-beta4] - 2026-01-01

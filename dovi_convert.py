@@ -31,7 +31,7 @@ from typing import List, Optional, Tuple
 # CONSTANTS
 # =============================================================================
 
-VERSION = "7.0.0"
+VERSION = "7.0.1"
 REPO_URL = "https://api.github.com/repos/cryptochrome/dovi_convert/releases/latest"
 
 # ANSI Colors
@@ -738,6 +738,26 @@ class MediaToolWrapper:
         except Exception:
             return ""
 
+    def get_frame_count_ffprobe(self, filepath: Path) -> int:
+        """Get highly accurate frame count using ffprobe stream analysis (Slow)."""
+        try:
+            # -count_packets reads the actual stream
+            cmd = [
+                "ffprobe", "-v", "error", "-select_streams", "v:0",
+                "-count_packets", "-show_entries", "stream=nb_read_packets",
+                "-of", "default=noprint_wrappers=1:nokey=1", str(filepath)
+            ]
+            
+            if self.debug_mode:
+                self.log(f"Running strict frame count: {' '.join(cmd)}")
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            return int(result.stdout.strip())
+        except Exception as e:
+            if self.debug_mode:
+                self.log(f"ffprobe frame count failed: {e}")
+            return 0
+
 
 # =============================================================================
 # MAIN APPLICATION CLASS
@@ -749,16 +769,11 @@ class DoviConvertApp:
     def __init__(self, config: Config):
         self.config = config
         
-        # Check for Windows long path limitation
-        if os.name == 'nt' and self.config.input_file:
-            try:
-                abs_path = self.config.input_file.resolve()
-                if len(str(abs_path)) > 255:
-                    print(f"{YELLOW}WARNING: Input file path is very long (>255 chars).{RESET}")
-                    print(f"{YELLOW}         Windows may fail to process this file due to OS limitations.{RESET}")
-                    print(f"{YELLOW}         Recommendation: Move the file to a shorter path (e.g. C:\\Data).{RESET}\n")
-            except Exception:
-                pass
+        # Check for Native Windows (Not Supported)
+        if os.name == 'nt':
+            print(f"{RED}Error: Native Windows is not officially supported.{RESET}")
+            print(f"       Please use {BOLD}WSL2 (Windows Subsystem for Linux){RESET} or {BOLD}Docker{RESET}.")
+            sys.exit(1)
         
         self.media = MediaToolWrapper(debug_mode=config.debug_mode)
         self.batch_running = False
@@ -1554,10 +1569,22 @@ class DoviConvertApp:
         spinner.stop()
         
         if frames_orig and frames_orig != frames_new:
-            print(f"\r\033[K[3/3] Verifying... {RED}FAIL: Frame mismatch!{RESET} ({frames_orig} vs {frames_new})")
-            return 1
-        
-        print(f"\r\033[K[3/3] Verifying... {GREEN}Success!{RESET}")
+            # DVY-33: Smart Verification Fallback
+            # MediaInfo metadata in the source might be wrong (e.g. Avatar.mkv).
+            # We run a slow but accurate ffprobe stream count on the ORIGINAL file to double-check.
+            print(f"\r\033[K[3/3] Verifying... {YELLOW}Metadata Mismatch ({frames_orig} vs {frames_new}). Checking Stream...{RESET}")
+            
+            ff_orig = self.media.get_frame_count_ffprobe(filepath)
+            
+            if ff_orig == frames_new:
+                 print(f"\r\033[K[3/3] Verifying... {GREEN}Success!{RESET} (Source Metadata was incorrect)")
+                 if self.config.debug_mode:
+                     self.media.log(f"Frame verification mismatch resolved: MI_Orig={frames_orig}, FF_Orig={ff_orig}, New={frames_new}")
+            else:
+                print(f"\r\033[K[3/3] Verifying... {RED}FAIL: Frame mismatch!{RESET} (Stream Verified: {ff_orig} vs {frames_new})")
+                return 1
+        else:
+            print(f"\r\033[K[3/3] Verifying... {GREEN}Success!{RESET}")
         
         # Print metrics
         self.print_metrics(temp_mkv, frames_new, start_time, orig_size)
@@ -1602,17 +1629,22 @@ class DoviConvertApp:
         orig_size = get_file_size(filepath)
         
         # 3. Conversion
-        res = self._convert_perform_conversion(filepath, conv_hevc)
-        if res != 0:
-            return res
+        try:
+            res = self._convert_perform_conversion(filepath, conv_hevc)
+            if res != 0:
+                return res
+                
+            # 4. Muxing
+            res = self._convert_mux(filepath, conv_hevc, temp_mkv, fps_orig)
+            if res != 0:
+                return res
+                
+            # 5. Finalize
+            return self._convert_finalize(filepath, temp_mkv, backup_mkv, conv_hevc, start_time, orig_size)
             
-        # 4. Muxing
-        res = self._convert_mux(filepath, conv_hevc, temp_mkv, fps_orig)
-        if res != 0:
-            return res
-            
-        # 5. Finalize
-        return self._convert_finalize(filepath, temp_mkv, backup_mkv, conv_hevc, start_time, orig_size)
+        finally:
+            # Critical Cleanup: Ensures temp files are deleted even if we return early (e.g. Frame Mismatch)
+            self._cleanup()
     
     def cmd_check_single(self, filepath: Path) -> None:
         """Scan and report on a single file."""
