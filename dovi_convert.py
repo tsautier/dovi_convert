@@ -155,6 +155,56 @@ def version_gt(v1: str, v2: str) -> bool:
 
 
 
+
+def is_wsl() -> bool:
+    """Check if running in Windows Subsystem for Linux."""
+    try:
+        if Path("/proc/version").exists():
+            with open("/proc/version", "r") as f:
+                return "microsoft" in f.read().lower()
+    except Exception:
+        pass
+    return False
+
+
+def check_wsl_path_limit(filepath: Path) -> bool:
+    """
+    Check if a file in WSL is on a Windows drive and exceeds the 255 char limit.
+    Uses /proc/mounts to robustly identify Windows filesystems (drvfs/9p).
+    Fails HARD if system mounts cannot be read.
+    """
+    try:
+        abs_path = str(filepath.resolve())
+        best_match = None
+        
+        with open("/proc/mounts", "r") as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 3:
+                    mount_point = parts[1]
+                    fs_type = parts[2]
+                    
+                    if abs_path.startswith(mount_point):
+                        # Keep the most specific mount point
+                        if best_match is None or len(mount_point) > len(best_match[0]):
+                             best_match = (mount_point, fs_type)
+        
+        if best_match:
+            fs_type = best_match[1]
+            if fs_type in ("drvfs", "9p") and len(abs_path) > 255:
+                # Confirmed: Windows Drive + Long Path
+                return True
+                
+    except Exception as e:
+        # Fail Hard on Broken System
+        print(f"\n{RED}Critical Error: Can't read /proc/mounts.{RESET}")
+        print(f"{RED}Your WSL environment appears broken or is not supported.{RESET}")
+        print(f"Debug: {e}")
+        sys.exit(1)
+        
+    return False
+
+
 def human_size_gb(size_bytes: int) -> str:
     """Convert bytes to human readable GB string."""
     gb = size_bytes / 1024 / 1024 / 1024
@@ -610,6 +660,12 @@ class MediaToolWrapper:
                 info.mi_info_string = "MEDIAINFO_FAIL"
                 if self.debug_mode:
                     self.log(f"MediaInfo Error (Code {result.returncode}): {result.stderr}")
+                
+                # Check for WSL Path Limit (Issue #14)
+                if is_wsl() and check_wsl_path_limit(filepath):
+                    info.mi_info_string = "MEDIAINFO_WSL_LIMIT"
+                else:
+                    info.mi_info_string = "MEDIAINFO_FAIL"
                 return info
             
             # Check for empty output
@@ -1224,6 +1280,9 @@ class DoviConvertApp:
 
         if mi == "MEDIAINFO_FAIL":
             return (f"{RED}Error: MediaInfo failed (Check file inputs or installation){RESET}", "ERROR")
+
+        if mi == "MEDIAINFO_WSL_LIMIT":
+            return (f"{RED}Error: WSL limit reached. File path > 255 chars on Windows drive.{RESET}", "ERROR")
         
         # Decision matrix
         if "dvhe.07" in mi or "Profile 7" in mi:
