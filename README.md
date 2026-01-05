@@ -6,6 +6,11 @@
 
 **Convert Dolby Vision Profile 7 MKV files to Profile 8.1 for universal playback compatibility.**
 
+> [!IMPORTANT]
+> **Upgrading from v6.x?** v7.0.0 is a complete Python rewrite. Dependencies have changed. Please ensure you have **Python 3.8+** installed and read the updated [installation instructions](https://docs.doviconvert.com/installation/terminal).
+>
+> **Docker users:** If you were testing the `:beta` tag, switch to `:latest`. The `:beta` tag will be deprecated.
+
 ## Why?
 
 Most streaming devices (Apple TV, Shield, Zidoo) don't support Profile 7's Enhancement Layer. They either fall back to HDR10 or blindly strip the layer, potentially ruining the picture.
