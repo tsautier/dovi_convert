@@ -57,13 +57,13 @@ services:
     image: cryptochrome/dovi_convert:latest
     container_name: dovi_convert
     environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Europe/Berlin
+      - PUID=1000 # Change to required User ID, if needed
+      - PGID=1000 # Change to required Group ID, if needed
+      - TZ=Europe/Berlin # Change to your timezone
     volumes:
-      - /path/to/media:/data
+      - /path/to/media:/data # Change to your media directory
     ports:
-      - 7681:7681
+      - 7681:7681 # Change left port to your desired port (e. g. 8080:7681)
     restart: unless-stopped
 ```
 
