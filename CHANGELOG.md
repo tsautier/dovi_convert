@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Conversion Verification:** Implemented a fallback mechanism for frame verification. If `MediaInfo` reports a frame mismatch (common with inaccurate source metadata), the script now double-checks using `ffprobe` stream analysis before failing (Ref #21).
+- **WSL Path Limit:** Improved handling of long file paths in WSL, which can exceed the 255 character limit (Ref #14).
+- **Windows:** Improved exiting on native Windows (WSL required) (Ref #22).
 
 ## [v7.0.0] - 2026-01-03 (Stable Release)
 
