@@ -8,7 +8,7 @@
 
 ## Why?
 
-Most streaming devices (Apple TV, Shield, Zidoo) don't support Profile 7's Enhancement Layer. They either fall back to HDR10 or blindly strip the layer, potentially ruining the picture.
+Most streaming devices (Apple TV, Shield, Amazon Fire*, etc.) don't support Profile 7's Enhancement Layer. They either fall back to HDR10 or blindly strip the layer, potentially ruining the picture.
 
 **dovi_convert** analyzes files first, converts only what's safe, and preserves dynamic metadata for correct Dolby Vision playback.
 
@@ -87,9 +87,10 @@ dovi_convert -batch             # Batch convert directory
 
 ## Documentation
 
-> **⚠️ Reading the documentation before you begin is highly recommended.**
+> [!IMPORTANT]
+> Reading the documentation before you begin is highly recommended.
 
-📚 **Full documentation, guides, and command reference:**
+**Full documentation, guides, and command reference:**
 
 ### **[docs.doviconvert.com](https://docs.doviconvert.com)**
 
