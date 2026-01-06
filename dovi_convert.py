@@ -888,7 +888,7 @@ class DoviConvertApp:
         print("  dovi_convert -scan                   : Scan all MKV files in current directory.")
         print("  dovi_convert -scan    [file]         : Scan a specific file.")
         print("  dovi_convert -inspect [file] [-safe] : Inspect full RPU structure (Active Brightness Check).")
-        print("  dovi_convert -convert [file]         : Convert a file to DV Profile 8.1.")
+        print("  dovi_convert -convert [file] [file2] : Convert file(s) to DV Profile 8.1.")
         print("  dovi_convert -convert [file] -safe   : Convert using Safe Mode (Disk Extraction).")
         print("  dovi_convert -batch   [-r N] [-y]    : Batch convert folder (-r for recursion, -y to auto-confirm).")
         print("  dovi_convert -cleanup [-r]    [-y]   : Delete tool backups (Optional: -r recursive).")
@@ -967,8 +967,8 @@ class DoviConvertApp:
        Options:
          {BOLD}-r [depth]{RESET}   Scan subdirectories recursively. Default depth: 5. Example: -r 2
 
-  {BOLD}-convert [file]{RESET}
-       Converts a single file to Profile 8.1.
+  {BOLD}-convert [file] [file2] ...{RESET}
+       Converts file(s) to Profile 8.1. Multiple files supported.
        Skips 'Complex FEL' files to prevent data loss.
        The original file is NOT deleted; it is renamed to *.mkv.bak.dovi_convert.
 
@@ -1783,22 +1783,75 @@ class DoviConvertApp:
         print("for a specific file, please verify it with -inspect before converting.")
         print("=" * 96)
     
-    def _find_mkv_files(self, max_depth: int) -> List[Path]:
-        """Find MKV files up to max_depth."""
+    def _find_mkv_files(self, max_depth: int, paths: List[Path] = None) -> List[Path]:
+        """
+        Find MKV files up to max_depth.
+        If paths provided, search those. Otherwise search current directory.
+        """
         files = []
-        cwd = Path.cwd()
         
-        if max_depth == 1:
-            files = sorted([f for f in cwd.glob("*.mkv") if not f.name.startswith("._")])
-        else:
-            for depth in range(max_depth + 1):
-                pattern = "/".join(["*"] * depth) + "/*.mkv" if depth > 0 else "*.mkv"
-                for f in cwd.glob(pattern):
-                    if not f.name.startswith("._") and "._" not in str(f):
-                        files.append(f)
-            files = sorted(set(files))
+        # Default to current directory if no paths specified
+        search_dirs = paths if paths else [Path.cwd()]
+        
+        for search_path in search_dirs:
+            if search_path.is_file():
+                # Direct file - include if it's an MKV
+                if search_path.suffix.lower() == ".mkv" and not search_path.name.startswith("._"):
+                    files.append(search_path)
+            elif search_path.is_dir():
+                # Directory - glob for MKV files
+                if max_depth == 1:
+                    for f in search_path.glob("*.mkv"):
+                        if not f.name.startswith("._"):
+                            files.append(f)
+                else:
+                    for depth in range(max_depth + 1):
+                        pattern = "/".join(["*"] * depth) + "/*.mkv" if depth > 0 else "*.mkv"
+                        for f in search_path.glob(pattern):
+                            if not f.name.startswith("._") and "._" not in str(f):
+                                files.append(f)
+        
+        return sorted(set(files))
+    
+    def collect_inputs(self, args: List[str], command: str, depth: int = 1) -> List[Path]:
+        """
+        Shared input handler - the 'bouncer'.
+        Validates inputs based on command rules and returns list of files to process.
+        
+        Rules:
+        - convert: Files only (directories error)
+        - batch: Directories only (files error)
+        - scan: Both files and directories allowed
+        """
+        files: List[Path] = []
+        directories: List[Path] = []
+        
+        for arg in args:
+            path = Path(arg)
+            if path.is_file():
+                if command == "batch":
+                    print(f"{RED}Error: '{arg}' is a file. Use -convert for specific files.{RESET}")
+                    sys.exit(1)
+                files.append(path)
+            elif path.is_dir():
+                if command == "convert":
+                    print(f"{RED}Error: '{arg}' is a directory. Use -batch to process directories.{RESET}")
+                    sys.exit(1)
+                directories.append(path)
+            else:
+                print(f"{RED}Error: '{arg}' not found.{RESET}")
+                sys.exit(1)
+        
+        # If directories provided, find MKV files in them
+        if directories:
+            files.extend(self._find_mkv_files(depth, directories))
+        
+        # If no args at all, default to current directory (for scan/batch)
+        if not args and command != "convert":
+            files = self._find_mkv_files(depth)
         
         return files
+    
     
     def cmd_batch(self, max_depth: int = 1) -> None:
         """Batch processing of directory."""
@@ -2471,10 +2524,46 @@ def main() -> None:
     
     elif command == "-convert":
         if not rest:
-            print("Usage: -convert [file]")
+            print("Usage: -convert [file] [file2] ...")
             sys.exit(1)
-        result = app.cmd_convert(Path(rest[0]), "manual")
-        sys.exit(result)
+        
+        # Use shared handler - validates files, rejects directories
+        files = app.collect_inputs(rest, "convert")
+        
+        if not files:
+            print(f"{RED}Error: No valid MKV files found.{RESET}")
+            sys.exit(1)
+        
+        if len(files) == 1:
+            # Single file - existing behavior
+            result = app.cmd_convert(files[0], "manual")
+            sys.exit(result)
+        else:
+            # Multiple files - loop with summary
+            success_count = 0
+            fail_list = []
+            
+            for idx, filepath in enumerate(files, 1):
+                print(f"\n{'=' * 51}")
+                print(f"[{idx}/{len(files)}] {filepath.name}")
+                print("=" * 51)
+                
+                result = app.cmd_convert(filepath, "manual")
+                if result == 0:
+                    success_count += 1
+                elif result == 130:
+                    # User abort
+                    break
+                else:
+                    fail_list.append(filepath.name)
+            
+            # Summary
+            print(f"\n{'=' * 51}")
+            print(f"Processed {success_count} of {len(files)} files.")
+            if fail_list:
+                print(f"Failed: {', '.join(fail_list)}")
+            print("=" * 51)
+            sys.exit(0 if not fail_list else 1)
     
     elif command in ("-inspect", "--inspect"):
         if not rest:
