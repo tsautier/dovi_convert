@@ -111,7 +111,7 @@ Missing dependencies are detected and can be installed automatically.
 ## Credits
 
 - [dovi_tool](https://github.com/quietvoid/dovi_tool) by quietvoid
-- [dovi_scripts](https://github.com/R3S3t9999/dovi_scripts) by R3S3t9999 — for inspiration and knowledge (the OG)
+- [dovi_scripts](https://github.com/R3S3t9999/dovi_scripts) by R3S3t9999 - for inspiration and knowledge (the OG)
 - [FFmpeg](https://ffmpeg.org/)
 - [MKVToolNix](https://mkvtoolnix.download/)
 - [MediaInfo](https://mediaarea.net/en/MediaInfo)
