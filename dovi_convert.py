@@ -31,7 +31,7 @@ from typing import List, Optional, Tuple
 # CONSTANTS
 # =============================================================================
 
-VERSION = "7.0.1"
+VERSION = "7.1.0"
 REPO_URL = "https://api.github.com/repos/cryptochrome/dovi_convert/releases/latest"
 
 # ANSI Colors
@@ -890,7 +890,7 @@ class DoviConvertApp:
         print("  dovi_convert -inspect [file] [-safe] : Inspect full RPU structure (Active Brightness Check).")
         print("  dovi_convert -convert [file]         : Convert a file to DV Profile 8.1.")
         print("  dovi_convert -convert [file] -safe   : Convert using Safe Mode (Disk Extraction).")
-        print("  dovi_convert -batch   [depth] [-y]   : Batch convert folder (-y to auto-confirm).")
+        print("  dovi_convert -batch   [-r N] [-y]    : Batch convert folder (-r for recursion, -y to auto-confirm).")
         print("  dovi_convert -cleanup [-r]    [-y]   : Delete tool backups (Optional: -r recursive).")
         print("  dovi_convert -update-check           : Check for software updates.")
         print()
@@ -985,9 +985,9 @@ class DoviConvertApp:
        Options:
          {BOLD}-safe{RESET}    Force Safe Mode (Disk Extraction fallback).
 
-  {BOLD}-batch [depth]{RESET}
+  {BOLD}-batch{RESET}
        Scan directory and convert safe Profile 7 files.
-       Default depth is 1 (current dir). Use '-batch 2' for subfolders.
+       Default depth is 1 (current dir). Use '-batch -r 2' for subfolders.
 
        Options:
          {BOLD}-y{RESET}               Skip confirmation prompts (Auto-Yes).
@@ -2483,8 +2483,17 @@ def main() -> None:
         app.cmd_inspect(Path(rest[0]))
     
     elif command == "-batch":
-        depth = int(rest[0]) if rest and rest[0].isdigit() else 1
-        app.cmd_batch(depth)
+        if rest and rest[0] == "-r":
+            depth = 5
+            if len(rest) > 1 and rest[1].isdigit():
+                depth = int(rest[1])
+            app.cmd_batch(depth)
+        elif not rest:
+            app.cmd_batch(1)
+        else:
+            print(f"{RED}Error: File not found: {rest[0]}{RESET}")
+            print(f"Tip: Use -batch -r N for recursive depth, or -convert for specific files.")
+            sys.exit(1)
     
     elif command == "-cleanup":
         recursive = "-r" in rest
