@@ -12,6 +12,14 @@
 #     -v /path/to/movies:/data \
 #     dovi_convert
 #
+# Run (CLI with fast temp storage):
+#   docker run -it --rm \
+#     -e PUID=1000 -e PGID=1000 \
+#     -v /path/to/movies:/data \
+#     -v /path/to/ssd:/cache \
+#     dovi_convert
+#   Then use: dovi -convert /data/movie.mkv -temp /cache
+#
 # Run (Web Terminal):
 #   docker run -d \
 #     --hostname dovi-convert \
@@ -143,8 +151,8 @@ if ! id -u dovi > /dev/null 2>&1; then
     useradd -u "${PUID}" -g "${TARGET_GROUP}" -m -s /bin/bash dovi
 fi
 
-# Ensure /data is accessible
-chown dovi:"${TARGET_GROUP}" /data 2>/dev/null || true
+# Note: We do NOT chown bind-mount directories (/data, /cache).
+# Users must ensure their PUID/PGID matches the ownership of their files.
 
 # Set timezone
 if [ -n "${TZ}" ] && [ -f "/usr/share/zoneinfo/${TZ}" ]; then
