@@ -12,11 +12,35 @@ Most streaming devices (Apple TV, Shield, Amazon Fire*, etc.) don't support Prof
 
 **dovi_convert** analyzes files first, converts only what's safe, and preserves dynamic metadata for correct Dolby Vision playback.
 
+## What's New (v7.1.0)
+
+**Key improvements:** 
+
+Multi-file convert, target directories, temp directory for HDD/NAS performance, directory grouping in scans, and more.
+
+See [CHANGELOG.md](CHANGELOG.md) for full details.
+
+## Documentation
+
+> [!IMPORTANT]
+> Reading the documentation before you begin is highly recommended.
+
+**Full documentation, guides, and command reference:**
+
+### **[docs.doviconvert.com](https://docs.doviconvert.com)**
+
 ## Compatibility
 
 - **macOS** (tested on macOS 26)
 - **Linux** (any modern distribution)
 - **Windows** (via WSL2 or Docker)
+
+## Requirements
+
+- Python 3.8+
+- ffmpeg, mkvtoolnix, mediainfo, [dovi_tool](https://github.com/quietvoid/dovi_tool)
+
+Missing dependencies are detected and can be installed automatically.
 
 ## Quick Start
 
@@ -84,24 +108,6 @@ dovi_convert -batch             # Batch convert directory
 - FEL can also contain film grain, noise, and color data. Retaining this data during conversion requires re-encoding, which is out of scope. Your player can't decode FEL anyway, so this data is already inaccessible. You do retain the Dolby Vision dynamic metadata (RPU).
 - Original files are backed up automatically. The `-delete` flag removes them permanently.
 - Read [Before You Start](https://docs.doviconvert.com/before-you-start) for the full explanation.
-
-## Documentation
-
-> [!IMPORTANT]
-> Reading the documentation before you begin is highly recommended.
-
-**Full documentation, guides, and command reference:**
-
-### **[docs.doviconvert.com](https://docs.doviconvert.com)**
-
----
-
-## Requirements
-
-- Python 3.8+
-- ffmpeg, mkvtoolnix, mediainfo, [dovi_tool](https://github.com/quietvoid/dovi_tool)
-
-Missing dependencies are detected and can be installed automatically.
 
 ## Changelog & Roadmap
 

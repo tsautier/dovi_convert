@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Recursive with Directories:** The `-r` flag works with target directories (`-batch /movies -r 3`).
 - **Mixed Inputs for Scan:** Combine files and directories in a single `-scan` command (`-scan /movies file.mkv`).
 - **Temp Directory:** New `-temp` flag to redirect intermediate files to a fast drive (SSD). This dramatically improves conversion speed when source files are on slow storage like HDDs or network shares. Example: `-convert movie.mkv -temp /mnt/ssd`. Works with `-convert` and `-batch`. 
+- **Directory Grouping:** Recursive scans now group files by directory with clear headers, making it easier to see which files belong where. 
 
 ### Changed
 - **Docker:** The container no longer modifies permissions on bind-mounted directories. Users must ensure their `PUID`/`PGID` matches the ownership of their files (standard Docker practice).

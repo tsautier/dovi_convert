@@ -894,12 +894,12 @@ class DoviConvertApp:
         print("  dovi_convert -update-check       Check for software updates.")
         print()
         print("Common Options:")
-        print("  -r N        Recursive depth (for -scan, -batch, -cleanup)")
-        print("  -y          Auto-confirm prompts")
-        print("  -force      Override Complex FEL warnings")
-        print("  -safe       Force disk extraction mode")
-        print("  -delete     Auto-delete backups on success")
-        print("  -temp PATH  Use temp directory for intermediate files")
+        print("  -r N          Recursive depth (for -scan, -batch, -cleanup)")
+        print("  -y            Auto-confirm prompts")
+        print("  -force        Override Complex FEL warnings")
+        print("  -safe         Force disk extraction mode")
+        print("  -delete       Auto-delete backups on success")
+        print("  -temp [path]  Use temp directory for intermediate files")
     
     def print_help(self) -> None:
         """Print detailed manual page."""
@@ -974,6 +974,7 @@ class DoviConvertApp:
 
        Options:
          {BOLD}-force{RESET}   Override 'Complex FEL' detection.
+         {BOLD}-temp [path]{RESET}  Write temp files to a faster drive.
 
   {BOLD}-inspect [file]{RESET}
        Full frame-by-frame inspection of brightness metadata.
@@ -995,6 +996,7 @@ class DoviConvertApp:
          {BOLD}-include-simple{RESET}  Allow auto-conversion of Simple FEL files in Auto-Yes mode.
          {BOLD}-force{RESET}           Force convert 'Complex FEL' files (Apply to all).
          {BOLD}-delete{RESET}          Auto-delete backups after successful conversion.
+         {BOLD}-temp [path]{RESET}       Write temp files to a faster drive.
 
   {BOLD}-cleanup{RESET}
        Scans for and deletes {CYAN}*.mkv.bak.dovi_convert{RESET} files in the current directory.
@@ -1040,6 +1042,12 @@ class DoviConvertApp:
        {YELLOW}Auto-Yes Mode.{RESET}
        Automatically answers 'Yes' to confirmation prompts (Batch Start / Cleanup).
        Does NOT override safety decisions (like Safe Mode fallback).
+
+  {BOLD}-temp [path]{RESET} [Convert, Batch]
+       {YELLOW}Temp Directory.{RESET}
+       Write temporary files to a separate directory.
+       Use this when source files are on slow storage (HDD, NAS).
+       The temp directory should be on a fast drive (SSD/NVMe).
 """
         # Use pager if available and stdout is a tty
         if shutil.which("less") and sys.stdout.isatty():
@@ -1757,7 +1765,19 @@ class DoviConvertApp:
         # Use provided files or find them
         mkv_files = files if files else self._find_mkv_files(max_depth)
         
+        # Only show directory headers if multiple directories
+        unique_dirs = len(set(f.parent for f in mkv_files))
+        show_headers = unique_dirs > 1
+        current_directory = None
+        
         for mkv_file in mkv_files:
+            # Directory header for grouping (only if multiple directories)
+            if show_headers and mkv_file.parent != current_directory:
+                if current_directory is not None:
+                    print()  # Blank line between directories
+                print(f"{BOLD}DIRECTORY: {mkv_file.parent}{RESET}")
+                current_directory = mkv_file.parent
+            
             self.analyze_file(mkv_file)
             
             name = mkv_file.name
