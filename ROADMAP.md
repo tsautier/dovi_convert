@@ -20,11 +20,8 @@ This document outlines planned future development for `dovi_convert`.
 
 - **Custom Output Path** — Support `-o /path` flag to write converted files to a different directory. Enables automation workflows (Automator, watch folders) without re-trigger issues.
 
-- **Temporary Directory Support** — Option to use a separate drive (like an SSD) for intermediate files. This avoids read/write bottleneck when converting files stored on mechanical hard drives, significantly improving speed.
-
 - **Directory Grouping in Scan Output** — Group files by parent directory when running recursive scans (`-scan -r`). Makes large scan results easier to read by visually separating files from different folders.
 
-- **Multi-Input Support** — Accept multiple files or directories as arguments. `-convert` will process multiple files sequentially; `-scan` and `-batch` will accept target directories (e.g., `dovi_convert -scan /movies /tv`). No more need to `cd` first. ([#17](https://github.com/cryptochrome/dovi_convert/issues/17))
 
 ## Under Consideration
 
