@@ -12,8 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Batch Recursion Syntax:** The shorthand `-batch 2` no longer works. Use `-batch -r 2` instead, matching `-scan` and `-cleanup`.
 
 ### ✨ New Features
-- **Multi-File Convert:** Convert multiple files in one command (`-convert file1.mkv file2.mkv`). A summary is displayed at the end.
-- **Target Directories:** Point `-scan` or `-batch` at specific directories instead of navigating there first (`-batch /movies`). Multiple directories are supported (`-batch /movies /tv`).
+- **Multi-File Convert:** Convert multiple files in one command (`-convert file1.mkv file2.mkv`). Works with wildcards (`-convert *.mkv`). A summary is displayed at the end.
+- **Target Directories:** Point `-scan` or `-batch` at specific directories instead of navigating there first (`-batch /movies`). Multiple directories are supported (`-scan /movies /tv`).
 - **Recursive with Directories:** The `-r` flag works with target directories (`-batch /movies -r 3`).
 - **Mixed Inputs for Scan:** Combine files and directories in a single `-scan` command (`-scan /movies file.mkv`).
 
