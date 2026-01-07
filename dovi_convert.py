@@ -884,22 +884,20 @@ class DoviConvertApp:
         """Print quick usage help."""
         print(f"{BOLD}dovi_convert v{VERSION}{RESET}")
         print("Usage:")
-        print(f"  {BOLD}dovi_convert -help                   : SHOW DETAILED MANUAL & EXAMPLES{RESET}")
-        print("  dovi_convert -scan                   : Scan all MKV files in current directory.")
-        print("  dovi_convert -scan    [file]         : Scan a specific file.")
-        print("  dovi_convert -inspect [file] [-safe] : Inspect full RPU structure (Active Brightness Check).")
-        print("  dovi_convert -convert [file] [file2] : Convert file(s) to DV Profile 8.1.")
-        print("  dovi_convert -convert [file] -safe   : Convert using Safe Mode (Disk Extraction).")
-        print("  dovi_convert -batch   [-r N] [-y]    : Batch convert folder (-r for recursion, -y to auto-confirm).")
-        print("  dovi_convert -cleanup [-r]    [-y]   : Delete tool backups (Optional: -r recursive).")
-        print("  dovi_convert -update-check           : Check for software updates.")
+        print(f"  {BOLD}dovi_convert -help{RESET}               Show detailed manual & examples.")
+        print("  dovi_convert -scan [path]        Scan file(s) or directory.")
+        print("  dovi_convert -inspect [file]     Full RPU structure inspection.")
+        print("  dovi_convert -convert [file] ... Convert file(s) to Profile 8.1.")
+        print("  dovi_convert -batch [dir]        Batch convert directory.")
+        print("  dovi_convert -cleanup            Delete tool backups.")
+        print("  dovi_convert -update-check       Check for software updates.")
         print()
-        print("Options:")
-        print("  -force  : Override 'Complex FEL' warnings and force conversion.")
-        print("  -safe   : Force extraction to disk (Robust for Seamless Branching rips).")
-        print("  -delete : Auto-delete backups on success.")
-        print("  -debug  : Generate dovi_convert_debug.log (Preserved on exit).")
-        print("  -y      : Auto-answer 'Yes' to confirmation prompts (Batch/Cleanup).")
+        print("Common Options:")
+        print("  -r N        Recursive depth (for -scan, -batch, -cleanup)")
+        print("  -y          Auto-confirm prompts")
+        print("  -force      Override Complex FEL warnings")
+        print("  -safe       Force disk extraction mode")
+        print("  -delete     Auto-delete backups on success")
     
     def print_help(self) -> None:
         """Print detailed manual page."""
@@ -958,14 +956,14 @@ class DoviConvertApp:
 
 {BOLD}COMMANDS{RESET}
 
-  {BOLD}-scan [file]{RESET}  (alias: -check)
-       Scan files to identify video format and conversion candidates.
+  {BOLD}-scan [path] [path2] ...{RESET}  (alias: -check)
+       Scan files or directories to identify format and conversion candidates.
        Detects HDR formats and analyzes Profile 7 files for FEL complexity.
 
-       If [file] is omitted, scans all MKV files in the current directory.
+       If no path is given, scans all MKV files in the current directory.
 
        Options:
-         {BOLD}-r [depth]{RESET}   Scan subdirectories recursively. Default depth: 5. Example: -r 2
+         {BOLD}-r [depth]{RESET}   Scan subdirectories recursively. Default depth: 5.
 
   {BOLD}-convert [file] [file2] ...{RESET}
        Converts file(s) to Profile 8.1. Multiple files supported.
@@ -985,11 +983,12 @@ class DoviConvertApp:
        Options:
          {BOLD}-safe{RESET}    Force Safe Mode (Disk Extraction fallback).
 
-  {BOLD}-batch{RESET}
-       Scan directory and convert safe Profile 7 files.
-       Default depth is 1 (current dir). Use '-batch -r 2' for subfolders.
+  {BOLD}-batch [dir] [dir2] ...{RESET}
+       Batch convert safe Profile 7 files from directories.
+       If no directory given, uses current directory.
 
        Options:
+         {BOLD}-r [depth]{RESET}   Scan subdirectories recursively. Default depth: 5.
          {BOLD}-y{RESET}               Skip confirmation prompts (Auto-Yes).
          {BOLD}-include-simple{RESET}  Allow auto-conversion of Simple FEL files in Auto-Yes mode.
          {BOLD}-force{RESET}           Force convert 'Complex FEL' files (Apply to all).
@@ -1727,11 +1726,14 @@ class DoviConvertApp:
             print()
             self._print_simple_fel_advisory()
     
-    def cmd_check_all(self, max_depth: int = 1) -> None:
-        """Scan all MKV files in directory."""
-        location = "in current directory"
-        if max_depth > 1:
+    def cmd_check_all(self, max_depth: int = 1, files: List[Path] = None) -> None:
+        """Scan all MKV files in directory or provided list."""
+        if files:
+            location = f"{len(files)} file(s)"
+        elif max_depth > 1:
             location = f"recursively ({max_depth} levels deep)"
+        else:
+            location = "in current directory"
         
         print(f"{CYAN}Running Scanning {location}...{RESET}")
         
@@ -1741,8 +1743,8 @@ class DoviConvertApp:
         
         simple_count = 0
         
-        # Find all MKV files
-        mkv_files = self._find_mkv_files(max_depth)
+        # Use provided files or find them
+        mkv_files = files if files else self._find_mkv_files(max_depth)
         
         for mkv_file in mkv_files:
             self.analyze_file(mkv_file)
@@ -1853,8 +1855,8 @@ class DoviConvertApp:
         return files
     
     
-    def cmd_batch(self, max_depth: int = 1) -> None:
-        """Batch processing of directory."""
+    def cmd_batch(self, max_depth: int = 1, files: List[Path] = None) -> None:
+        """Batch processing of directory or provided file list."""
         
         conversion_queue: List[Path] = []
         simple_fel_queue: List[Path] = []
@@ -1866,9 +1868,15 @@ class DoviConvertApp:
         forced_count = 0
         total_batch_size = 0
         
-        print(f"{BOLD}Scanning for Profile 7 files (Depth: {max_depth})...{RESET}")
+        if files:
+            print(f"{BOLD}Processing {len(files)} file(s)...{RESET}")
+        else:
+            print(f"{BOLD}Scanning for Profile 7 files (Depth: {max_depth})...{RESET}")
         
-        for mkv_file in self._find_mkv_files(max_depth):
+        # Use provided files or find them
+        mkv_files = files if files else self._find_mkv_files(max_depth)
+        
+        for mkv_file in mkv_files:
             self.analyze_file(mkv_file)
             
             is_simple = "FEL (Simple)" in self.dovi_status
@@ -2511,16 +2519,29 @@ def main() -> None:
     rest = args[1:]
     
     if command in ("-check", "-scan"):
-        if rest and rest[0] == "-r":
-            depth = 5
-            if len(rest) > 1 and rest[1].isdigit():
-                depth = int(rest[1])
-            app.cmd_check_all(depth)
-        elif not rest:
-            app.cmd_check_all(1)
-
+        # Smart -r parsing: extract depth from anywhere in args
+        depth = 1
+        paths = []
+        i = 0
+        while i < len(rest):
+            if rest[i] == "-r":
+                depth = 5  # default if -r with no number
+                if i + 1 < len(rest) and rest[i + 1].isdigit():
+                    depth = int(rest[i + 1])
+                    i += 1
+            else:
+                paths.append(rest[i])
+            i += 1
+        
+        # Use shared handler - accepts both files and directories
+        files = app.collect_inputs(paths, "scan", depth)
+        
+        if len(files) == 1:
+            # Single file - use existing single-file scan
+            app.cmd_check_single(files[0])
         else:
-            app.cmd_check_single(Path(rest[0]))
+            # Multiple files or directory scan
+            app.cmd_check_all(depth, files if paths else None)
     
     elif command == "-convert":
         if not rest:
@@ -2572,17 +2593,24 @@ def main() -> None:
         app.cmd_inspect(Path(rest[0]))
     
     elif command == "-batch":
-        if rest and rest[0] == "-r":
-            depth = 5
-            if len(rest) > 1 and rest[1].isdigit():
-                depth = int(rest[1])
-            app.cmd_batch(depth)
-        elif not rest:
-            app.cmd_batch(1)
-        else:
-            print(f"{RED}Error: File not found: {rest[0]}{RESET}")
-            print(f"Tip: Use -batch -r N for recursive depth, or -convert for specific files.")
-            sys.exit(1)
+        # Smart -r parsing: extract depth from anywhere in args
+        depth = 1
+        paths = []
+        i = 0
+        while i < len(rest):
+            if rest[i] == "-r":
+                depth = 5  # default if -r with no number
+                if i + 1 < len(rest) and rest[i + 1].isdigit():
+                    depth = int(rest[i + 1])
+                    i += 1
+            else:
+                paths.append(rest[i])
+            i += 1
+        
+        # Use shared handler - directories only, rejects files
+        files = app.collect_inputs(paths, "batch", depth)
+        
+        app.cmd_batch(depth, files if paths else None)
     
     elif command == "-cleanup":
         recursive = "-r" in rest
