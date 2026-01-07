@@ -200,7 +200,7 @@ echo "║                                                              ║"
 echo "║  Your files are mounted at: /data                            ║"
 echo "║                                                              ║"
 echo "║  For more information, visit:                                ║"
-echo "║  https://docs.doviconvert.com                                 ║"
+echo "║  https://docs.doviconvert.com                                ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 exec bash
