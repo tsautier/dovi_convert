@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Target Directories:** Point `-scan` or `-batch` at specific directories instead of navigating there first (`-batch /movies`). Multiple directories are supported (`-scan /movies /tv`).
 - **Recursive with Directories:** The `-r` flag works with target directories (`-batch /movies -r 3`).
 - **Mixed Inputs for Scan:** Combine files and directories in a single `-scan` command (`-scan /movies file.mkv`).
+- **Temp Directory:** New `-temp` flag to redirect intermediate files to a fast drive (SSD). This dramatically improves conversion speed when source files are on slow storage like HDDs or network shares. Example: `-convert movie.mkv -temp /mnt/ssd`.
 
 
 ## [v7.0.1] - 2026-01-04

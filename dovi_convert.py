@@ -88,6 +88,7 @@ class Config:
     auto_yes: bool = False
     include_simple: bool = False
     delete_backup: bool = False
+    temp_dir: Optional[Path] = None
 
 
 @dataclass
@@ -898,6 +899,7 @@ class DoviConvertApp:
         print("  -force      Override Complex FEL warnings")
         print("  -safe       Force disk extraction mode")
         print("  -delete     Auto-delete backups on success")
+        print("  -temp PATH  Use temp directory for intermediate files")
     
     def print_help(self) -> None:
         """Print detailed manual page."""
@@ -1528,7 +1530,16 @@ class DoviConvertApp:
     def _convert_setup_paths(self, filepath: Path) -> Optional[Tuple[Path, Path, Path]]:
         """Setup paths. Returns (conv_hevc, temp_mkv, backup_mkv) or None on error."""
         base_name = filepath.stem
-        conv_hevc = filepath.with_name(f"{base_name}.p81.hevc")
+        
+        # Use temp_dir for intermediate files if specified, otherwise use source directory
+        # Route conv_hevc to temp_dir if specified (Design B: only HEVC goes to temp)
+        if self.config.temp_dir:
+            conv_hevc = self.config.temp_dir / f"{base_name}.p81.hevc"
+        else:
+            conv_hevc = filepath.with_name(f"{base_name}.p81.hevc")
+        
+        # temp_mkv and backup_mkv always stay in source directory
+        # This avoids cross-filesystem rename issues
         temp_mkv = filepath.with_name(f"{base_name}.p81.mkv")
         backup_mkv = filepath.with_suffix(".mkv.bak.dovi_convert")
         
@@ -2503,8 +2514,43 @@ def main() -> None:
             config.debug_mode = True
         elif arg == "-delete":
             config.delete_backup = True
+        elif arg in ("-temp", "--temp-dir"):
+            # Mark for pass 2 (value parsing)
+            args.append(arg)
         else:
             args.append(arg)
+    
+    # Pass 2: Parse -temp value argument
+    final_args = []
+    i = 0
+    while i < len(args):
+        if args[i] in ("-temp", "--temp-dir"):
+            if i + 1 < len(args):
+                temp_path = Path(args[i + 1])
+                # Pre-flight validation
+                if not temp_path.exists():
+                    print(f"{RED}Error: Temp directory does not exist: {temp_path}{RESET}")
+                    sys.exit(1)
+                if not temp_path.is_dir():
+                    print(f"{RED}Error: Temp path is not a directory: {temp_path}{RESET}")
+                    sys.exit(1)
+                # Writability check
+                try:
+                    test_file = temp_path / ".dovi_convert_write_test"
+                    test_file.touch()
+                    test_file.unlink()
+                except Exception:
+                    print(f"{RED}Error: Temp directory is not writable: {temp_path}{RESET}")
+                    sys.exit(1)
+                config.temp_dir = temp_path
+                i += 2
+            else:
+                print(f"{RED}Error: -temp requires a path argument.{RESET}")
+                sys.exit(1)
+        else:
+            final_args.append(args[i])
+            i += 1
+    args = final_args
     
     app = DoviConvertApp(config)
     
