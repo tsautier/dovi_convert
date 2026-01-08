@@ -4,9 +4,6 @@ This document outlines planned future development for `dovi_convert`.
 
 > **Note:** This roadmap is subject to change based on user feedback and technical feasibility.
 
-## In Progress
-
-- **Full Documentation** - I am currently working on a comprehensive documentation for `dovi_convert`. It will contain guides and usage examples, installation instructions, etc. - The goal is to keep the README as simple as possible and move everything else to the docs (hosted separately)
 
 ## Planned (in no particular order)
 
@@ -20,13 +17,13 @@ This document outlines planned future development for `dovi_convert`.
 
 - **Custom Output Path** — Support `-o /path` flag to write converted files to a different directory. Enables automation workflows (Automator, watch folders) without re-trigger issues.
 
-- **Directory Grouping in Scan Output** — Group files by parent directory when running recursive scans (`-scan -r`). Makes large scan results easier to read by visually separating files from different folders.
+- **Watch Folder Support** - for Docker users, set up a watch folder to automatically trigger conversions when new files are added to the folder.
 
 
 ## Under Consideration
 
 - **Auto-Inspect Simple FEL During Scan** — New `-inspect-simple` flag for `-scan` that automatically runs full inspection on all Simple FEL files after the scan completes. Eliminates the need to manually run `-inspect` on each file. ([#16](https://github.com/cryptochrome/dovi_convert/issues/16))
 
-- **Web Interface (Docker Phase 2)** — Browser-based management UI for NAS users: visual file browser, batch selection, live progress monitoring, and backup management. Depends on Docker container release.
+- **Web Interface (Docker Phase 2)** — Browser-based management UI for NAS users: visual file browser, batch selection, live progress monitoring, and backup management.
 
 - **TrueHD Atmos to EAC3 Atmos Conversion** — Convert TrueHD Atmos audio tracks to EAC3 Atmos for Apple TV compatibility. Feasibility still under investigation (may require paid Dolby encoder license).
