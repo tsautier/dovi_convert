@@ -70,6 +70,7 @@ class VideoInfo:
     mi_info_string: str = ""
     fps: str = ""
     frame_count: int = 0
+    mkvmerge_error: str = ""
 
 
 @dataclass
@@ -627,7 +628,23 @@ class MediaToolWrapper:
                 text=True
             )
             if result.returncode != 0:
+                # mkvmerge returns errors in stdout JSON, not stderr
+                error_msg = ""
+                try:
+                    err_json = json.loads(result.stdout)
+                    errors = err_json.get("errors", [])
+                    if errors:
+                        error_msg = errors[0].strip()
+                except Exception:
+                    error_msg = result.stderr.strip() if result.stderr else ""
+                
                 info.mi_info_string = "MKVMERGE_FAIL"
+                info.mkvmerge_error = error_msg
+                if self.debug_mode:
+                    self.log(f"mkvmerge error: {filepath}")
+                    self.log(f"Command: mkvmerge -J {filepath}")
+                    self.log(f"Exit code: {result.returncode}")
+                    self.log(f"Error: {error_msg or '(empty)'}")
                 return info
             
             mkv_json = json.loads(result.stdout)
@@ -648,6 +665,10 @@ class MediaToolWrapper:
                 
         except Exception as e:
             info.mi_info_string = "MKVMERGE_FAIL"
+            info.mkvmerge_error = str(e)
+            if self.debug_mode:
+                self.log(f"mkvmerge exception: {filepath}")
+                self.log(f"Error: {e}")
             return info
         
         # 2. Get Dolby Vision profile from MediaInfo
@@ -660,7 +681,7 @@ class MediaToolWrapper:
             if result.returncode != 0:
                 info.mi_info_string = "MEDIAINFO_FAIL"
                 if self.debug_mode:
-                    self.log(f"MediaInfo Error (Code {result.returncode}): {result.stderr}")
+                    self.log(f"mediainfo error (code {result.returncode}): {result.stderr}")
                 
                 # Check for WSL Path Limit (Issue #14)
                 if is_wsl() and check_wsl_path_limit(filepath):
@@ -1285,7 +1306,11 @@ class DoviConvertApp:
             return (f"{RED}No Video Track{RESET}", "SKIP")
         
         if mi == "MKVMERGE_FAIL":
-            return (f"{RED}Error: mkvmerge failed (Check Locale/Install){RESET}", "ERROR")
+            if info.mkvmerge_error:
+                err_detail = info.mkvmerge_error.split('\n')[0][:60]
+                return (f"{RED}mkvmerge: {err_detail}{RESET}", "ERROR")
+            else:
+                return (f"{RED}mkvmerge: failed (no details, use -debug){RESET}", "ERROR")
 
         if mi == "MEDIAINFO_FAIL":
             return (f"{RED}Error: MediaInfo failed (Check file inputs or installation){RESET}", "ERROR")
