@@ -742,8 +742,9 @@ class MediaToolWrapper:
                     bl_peak = int(match.group(1))
             elif mi_out and mi_out[0].isdigit():
                 bl_peak = int(mi_out.split(".")[0])
-        except Exception:
-            pass
+        except Exception as e:
+            if self.debug_mode:
+                self.log(f"get_bl_peak mediainfo exception: {e}")
         
         # Fallback to ffprobe (use Popen to read only first line)
         if bl_peak == 1000:
@@ -769,8 +770,9 @@ class MediaToolWrapper:
                     bl_peak = int(int(num) / int(den))
                 elif out and out[0].isdigit():
                     bl_peak = int(float(out))
-            except Exception:
-                pass
+            except Exception as e:
+                if self.debug_mode:
+                    self.log(f"get_bl_peak ffprobe exception: {e}")
         
         # Sanity check
         if bl_peak < 100:
@@ -1142,7 +1144,9 @@ class DoviConvertApp:
                     stdin=subprocess.DEVNULL
                 )
 
-            except Exception:
+            except Exception as e:
+                if self.config.debug_mode:
+                    self.media.log(f"probe ffmpeg exception @ {t}s: {e}")
                 continue
 
             
@@ -1156,8 +1160,9 @@ class DoviConvertApp:
                     ["dovi_tool", "extract-rpu", str(temp_hevc), "-o", str(temp_rpu)],
                     capture_output=True
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                if self.config.debug_mode:
+                    self.media.log(f"probe dovi_tool extract-rpu exception: {e}")
             
             temp_hevc.unlink(missing_ok=True)
             
@@ -1171,8 +1176,9 @@ class DoviConvertApp:
                     ["dovi_tool", "export", "-i", str(temp_rpu), "-d", f"all={temp_json}"],
                     capture_output=True
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                if self.config.debug_mode:
+                    self.media.log(f"probe dovi_tool export exception: {e}")
             
             temp_rpu.unlink(missing_ok=True)
             
@@ -1218,6 +1224,16 @@ class DoviConvertApp:
         if probe_count == 0:
             result.reason = "Extraction failed (No probes succeeded)"
             result.verdict = "COMPLEX"  # Default to Complex if we can't read it
+            return result
+        
+        # Require at least 50% of probes to succeed for reliable verdict
+        # (Only applies when we haven't already detected Complex - early break is fine)
+        min_required = max(1, len(timestamps) // 2)
+        if not complex_signal and probe_count < min_required:
+            if self.config.debug_mode:
+                self.media.log(f"Probe threshold not met: {probe_count}/{len(timestamps)} succeeded, {min_required} required")
+            result.reason = f"Insufficient data ({probe_count}/{len(timestamps)} probes succeeded)"
+            result.verdict = "COMPLEX"  # Default to Complex if data is unreliable
             return result
         
         if complex_signal:
@@ -1324,10 +1340,14 @@ class DoviConvertApp:
             self.scan_result = self.check_fel_complexity(filepath)
             
             if self.scan_result.verdict == "COMPLEX":
-                status = f"{RED}DV Profile 7 FEL (Complex){RESET}"
-                if self.config.force_mode:
+                if "Insufficient data" in self.scan_result.reason or "Extraction failed" in self.scan_result.reason:
+                    status = f"{RED}DV Profile 7 (Scan Failed){RESET}"
+                    action = f"{RED}SKIP (error){RESET}"
+                elif self.config.force_mode:
+                    status = f"{RED}DV Profile 7 FEL (Complex){RESET}"
                     action = f"{RED}CONVERT (FORCED){RESET}"
                 else:
+                    status = f"{RED}DV Profile 7 FEL (Complex){RESET}"
                     action = f"{RED}SKIP (Complex FEL){RESET}"
             elif self.scan_result.verdict == "SAFE":
                 if "MEL" in self.scan_result.reason:
@@ -1464,6 +1484,9 @@ class DoviConvertApp:
         
         # Error classification from dovi_tool
         stderr_text = dovi_stderr.decode() if dovi_stderr else ""
+        
+        if self.config.debug_mode:
+            self.media.log(f"dovi_tool error (code {dovi_status}): {stderr_text or '(empty)'}")
         
         if any(err in stderr_text for err in ["No space left on device", "Permission denied", "Read-only file system"]):
             print(stderr_text)
@@ -2217,8 +2240,9 @@ class DoviConvertApp:
                         content = pf_json.read_text()
                         if '"el_type":"MEL"' in content:
                             mel_detected = True
-        except Exception:
-            pass
+        except Exception as e:
+            if self.config.debug_mode:
+                self.media.log(f"MEL fast pass exception: {e}")
         
         pf_hevc.unlink(missing_ok=True)
         pf_rpu.unlink(missing_ok=True)
