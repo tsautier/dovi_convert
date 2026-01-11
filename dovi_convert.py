@@ -90,6 +90,7 @@ class Config:
     include_simple: bool = False
     delete_backup: bool = False
     temp_dir: Optional[Path] = None
+    output_dir: Optional[Path] = None
 
 
 @dataclass
@@ -923,6 +924,7 @@ class DoviConvertApp:
         print("  -safe         Force disk extraction mode")
         print("  -delete       Auto-delete backups on success")
         print("  -temp [path]  Use temp directory for intermediate files")
+        print("  -o [path]     Output directory for converted files")
     
     def print_help(self) -> None:
         """Print detailed manual page."""
@@ -1071,6 +1073,13 @@ class DoviConvertApp:
        Write temporary files to a separate directory.
        Use this when source files are on slow storage (HDD, NAS).
        The temp directory should be on a fast drive (SSD/NVMe).
+
+  {BOLD}-o [path]{RESET} [Convert, Batch]
+       {YELLOW}Output Directory.{RESET}
+       Place converted files in specified directory.
+       
+       Convert: Files placed directly in output directory.
+       Batch:   Basename of source directory preserved, subdirectories mirrored.
 """
         # Use pager if available and stdout is a tty
         if shutil.which("less") and sys.stdout.isatty():
@@ -1583,8 +1592,8 @@ class DoviConvertApp:
             
         return None
 
-    def _convert_setup_paths(self, filepath: Path) -> Optional[Tuple[Path, Path, Path]]:
-        """Setup paths. Returns (conv_hevc, temp_mkv, backup_mkv) or None on error."""
+    def _convert_setup_paths(self, filepath: Path, batch_source_dir: Optional[Path] = None) -> Optional[Tuple[Path, Path, Path, Path]]:
+        """Setup paths. Returns (conv_hevc, temp_mkv, backup_mkv, final_output_path) or None on error."""
         base_name = filepath.stem
         
         # Use temp_dir for intermediate files if specified, otherwise use source directory
@@ -1594,10 +1603,27 @@ class DoviConvertApp:
         else:
             conv_hevc = filepath.with_name(f"{base_name}.p81.hevc")
         
-        # temp_mkv and backup_mkv always stay in source directory
-        # This avoids cross-filesystem rename issues
-        temp_mkv = filepath.with_name(f"{base_name}.p81.mkv")
+        # temp_mkv uses .tmp extension to prevent automation retrigger
+        # Always stays in source directory for efficient I/O
+        temp_mkv = filepath.with_name(f"{base_name}.p81.tmp")
         backup_mkv = filepath.with_suffix(".mkv.bak.dovi_convert")
+        
+        # Calculate final output path
+        if self.config.output_dir:
+            if batch_source_dir:
+                # Batch mode: preserve basename and subdirectory structure
+                batch_basename = batch_source_dir.name
+                rel_path = filepath.relative_to(batch_source_dir)
+                final_output_path = self.config.output_dir / batch_basename / rel_path
+            else:
+                # Convert mode: place directly in output directory
+                final_output_path = self.config.output_dir / f"{base_name}.mkv"
+            
+            # Ensure output subdirectories exist
+            final_output_path.parent.mkdir(parents=True, exist_ok=True)
+        else:
+            # No -o flag: output in source directory (standard behavior)
+            final_output_path = filepath
         
         self.temp_files.extend([conv_hevc, temp_mkv])
         
@@ -1605,7 +1631,7 @@ class DoviConvertApp:
             print(f"{RED}Skipping: Backup file already exists.{RESET}")
             return None
             
-        return conv_hevc, temp_mkv, backup_mkv
+        return conv_hevc, temp_mkv, backup_mkv, final_output_path
 
     def _convert_perform_conversion(self, filepath: Path, conv_hevc: Path) -> int:
         """Run the actual conversion. Returns 0=success, 1=fail, 130=abort."""
@@ -1683,7 +1709,7 @@ class DoviConvertApp:
         print(f"\r\033[K[2/3] Muxing (Cloning Metadata + {fps_orig}fps)... Done.")
         return 0
 
-    def _convert_finalize(self, filepath: Path, temp_mkv: Path, backup_mkv: Path, conv_hevc: Path, start_time: float, orig_size: int) -> int:
+    def _convert_finalize(self, filepath: Path, temp_mkv: Path, backup_mkv: Path, conv_hevc: Path, start_time: float, orig_size: int, final_output_path: Path) -> int:
         """Verify, swap and print metrics. Returns 0=success, 1=fail."""
         # Step 4: Verification
         spinner = Spinner("[3/3] Verifying... ")
@@ -1714,9 +1740,20 @@ class DoviConvertApp:
         # Print metrics
         self.print_metrics(temp_mkv, frames_new, start_time, orig_size)
         
-        # Step 5: Atomic swap
+        # Step 5: Create backup and move output
         filepath.rename(backup_mkv)
-        temp_mkv.rename(filepath)
+        
+        if final_output_path == filepath:
+            # No -o flag: rename .tmp to .mkv in same directory
+            temp_mkv.rename(filepath)
+        else:
+            # With -o: move to destination and rename .tmp to .mkv
+            spinner = Spinner("Moving to output directory... ")
+            spinner.start()
+            shutil.move(str(temp_mkv), str(final_output_path))
+            spinner.stop()
+            print(f"\r\033[KMoving to output directory... Done.")
+            print(f"Output saved to: {CYAN}{final_output_path}{RESET}")
         
         if self.config.delete_backup:
             backup_mkv.unlink()
@@ -1728,15 +1765,17 @@ class DoviConvertApp:
         return 0
 
     
-    def cmd_convert(self, filepath: Path, mode: str = "manual") -> int:
+    def cmd_convert(self, filepath: Path, mode: str = "manual", batch_source_dir: Optional[Path] = None) -> int:
         """Convert a single file. Returns 0=success, 1=error, 2=skip, 130=abort."""
         
         # 1. Validation
         res = self._convert_validate(filepath, mode)
         if res is not None:
             return res
-            
-        print(f"{BOLD}Processing:{RESET} {filepath}")
+        
+        # Only print Processing line in manual mode (batch mode already announces the file)
+        if mode == "manual":
+            print(f"{BOLD}Processing:{RESET} {filepath}")
         
         # 2. Setup (Get FPS and paths)
         fps_orig = self.media.get_fps(filepath)
@@ -1744,10 +1783,10 @@ class DoviConvertApp:
             print(f"{RED}Error: Could not detect Frame Rate.{RESET}")
             return 1
             
-        paths = self._convert_setup_paths(filepath)
+        paths = self._convert_setup_paths(filepath, batch_source_dir)
         if not paths:
             return 1
-        conv_hevc, temp_mkv, backup_mkv = paths
+        conv_hevc, temp_mkv, backup_mkv, final_output_path = paths
         
         # Initialize metrics
         start_time = time.time()
@@ -1765,7 +1804,7 @@ class DoviConvertApp:
                 return res
                 
             # 5. Finalize
-            return self._convert_finalize(filepath, temp_mkv, backup_mkv, conv_hevc, start_time, orig_size)
+            return self._convert_finalize(filepath, temp_mkv, backup_mkv, conv_hevc, start_time, orig_size, final_output_path)
             
         finally:
             # Critical Cleanup: Ensures temp files are deleted even if we return early (e.g. Frame Mismatch)
@@ -1934,7 +1973,62 @@ class DoviConvertApp:
         return files
     
     
-    def cmd_batch(self, max_depth: int = 1, files: List[Path] = None) -> None:
+    def _build_batch_source_map(self, source_dirs: List[Path], max_depth: int) -> Dict[Path, Path]:
+        """
+        Map files to their source directories and detect basename collisions.
+        Only called when -o flag is used.
+        
+        Args:
+            source_dirs: List of directories specified by user
+            max_depth: Recursion depth for file discovery
+            
+        Returns:
+            Dictionary mapping file_path -> source_directory
+            
+        Raises:
+            SystemExit: If basename collision detected
+        """
+        # Pre-flight check: detect basename collisions
+        basenames = [d.name for d in source_dirs]
+        if len(basenames) != len(set(basenames)):
+            # Find duplicates
+            seen = {}
+            duplicates = {}
+            for d in source_dirs:
+                basename = d.name
+                if basename in seen:
+                    if basename not in duplicates:
+                        duplicates[basename] = [seen[basename]]
+                    duplicates[basename].append(d)
+                else:
+                    seen[basename] = d
+            
+            # Format error message
+            print(f"{RED}Error: Basename collision detected.{RESET}")
+            for basename, paths in duplicates.items():
+                print(f"\nMultiple source directories share the same name '{basename}':")
+                for p in paths:
+                    print(f"  - {p}")
+                print(f"\nBoth would write to: {self.config.output_dir}/{basename}/")
+            
+            print(f"\n{BOLD}Solution:{RESET} Process directories separately:")
+            for i, (basename, paths) in enumerate(duplicates.items()):
+                for j, p in enumerate(paths):
+                    suffix = f"_{j+1}" if len(paths) > 1 else ""
+                    print(f"  dovi_convert -batch {p} -o {self.config.output_dir}/{basename}{suffix}/")
+            
+            sys.exit(1)
+        
+        # Build file-to-source mapping
+        file_map: Dict[Path, Path] = {}
+        for source_dir in source_dirs:
+            files = self._find_mkv_files(max_depth, [source_dir])
+            for file in files:
+                file_map[file] = source_dir
+        
+        return file_map
+    
+    def cmd_batch(self, max_depth: int = 1, files: List[Path] = None, source_dirs: List[Path] = None) -> None:
         """Batch processing of directory or provided file list."""
         
         conversion_queue: List[Path] = []
@@ -2079,6 +2173,11 @@ class DoviConvertApp:
         print("BATCH PROCESSING STARTED")
         print("=" * 51)
         
+        # Build file-to-source mapping if -o flag is used
+        file_source_map: Dict[Path, Path] = {}
+        if self.config.output_dir and source_dirs:
+            file_source_map = self._build_batch_source_map(source_dirs, max_depth)
+        
         success_list: List[str] = []
         fail_list: List[str] = []
         success_simple_count = 0
@@ -2089,13 +2188,17 @@ class DoviConvertApp:
             if self.abort_requested:
                 break
             
+            print("Batch:")
+            print(f"{BOLD}[{idx}/{queue_count}]{RESET} {filepath.name}")
             print("---------------------------------------------------")
-            print(f"{BOLD}[{idx}/{queue_count}]{RESET} Processing: {filepath.name}")
             
             # Re-analyze for fresh state
             self.analyze_file(filepath)
             
-            res = self.cmd_convert(filepath, "auto")
+            # Get source directory from map (None if -o not used or file not in map)
+            batch_source = file_source_map.get(filepath, None)
+            
+            res = self.cmd_convert(filepath, "auto", batch_source)
             
             if res == 130 or self.abort_requested:
                 break
@@ -2583,13 +2686,13 @@ def main() -> None:
             config.debug_mode = True
         elif arg == "-delete":
             config.delete_backup = True
-        elif arg in ("-temp", "--temp-dir"):
+        elif arg in ("-temp", "--temp-dir", "-o"):
             # Mark for pass 2 (value parsing)
             args.append(arg)
         else:
             args.append(arg)
     
-    # Pass 2: Parse -temp value argument
+    # Pass 2: Parse -temp and -o value arguments
     final_args = []
     i = 0
     while i < len(args):
@@ -2615,6 +2718,32 @@ def main() -> None:
                 i += 2
             else:
                 print(f"{RED}Error: -temp requires a path argument.{RESET}")
+                sys.exit(1)
+        elif args[i] == "-o":
+            if i + 1 < len(args):
+                output_path = Path(args[i + 1])
+                # Create directory if it doesn't exist
+                try:
+                    output_path.mkdir(parents=True, exist_ok=True)
+                except Exception as e:
+                    print(f"{RED}Error: Could not create output directory: {output_path}{RESET}")
+                    print(f"       {e}")
+                    sys.exit(1)
+                if not output_path.is_dir():
+                    print(f"{RED}Error: Output path is not a directory: {output_path}{RESET}")
+                    sys.exit(1)
+                # Writability check
+                try:
+                    test_file = output_path / ".dovi_convert_write_test"
+                    test_file.touch()
+                    test_file.unlink()
+                except Exception:
+                    print(f"{RED}Error: Output directory is not writable: {output_path}{RESET}")
+                    sys.exit(1)
+                config.output_dir = output_path
+                i += 2
+            else:
+                print(f"{RED}Error: -o requires a path argument.{RESET}")
                 sys.exit(1)
         else:
             final_args.append(args[i])
@@ -2722,10 +2851,13 @@ def main() -> None:
                 paths.append(rest[i])
             i += 1
         
+        # Track source directories for -o mode (before collect_inputs resolves to files)
+        source_dirs = [Path(p) for p in paths if Path(p).is_dir()] if paths else None
+        
         # Use shared handler - directories only, rejects files
         files = app.collect_inputs(paths, "batch", depth)
         
-        app.cmd_batch(depth, files if paths else None)
+        app.cmd_batch(depth, files if paths else None, source_dirs)
     
     elif command == "-cleanup":
         recursive = "-r" in rest
