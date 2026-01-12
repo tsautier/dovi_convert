@@ -12,11 +12,11 @@ Most streaming devices (Apple TV, Shield, Amazon Fire*, etc.) don't support Prof
 
 **dovi_convert** analyzes files first, converts only what's safe, and preserves dynamic metadata for correct Dolby Vision playback.
 
-## What's New (v7.1.0)
+## What's New (v7.x)
 
 **Key improvements:** 
 
-Multi-file convert, target directories, temp directory for HDD/NAS performance, directory grouping in scans, and more.
+Multi-file convert, target directories, temp directory for HDD/NAS performance, directory grouping in scans, custom output directory and more.
 
 See [CHANGELOG.md](CHANGELOG.md) for full details.
 
