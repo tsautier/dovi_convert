@@ -16,7 +16,7 @@ Most streaming devices (Apple TV, Shield, Amazon Fire*, etc.) don't support Prof
 
 **Key improvements:** 
 
-Multi-file convert, target directories, temp directory for HDD/NAS performance, directory grouping in scans, custom output directory and more.
+Multi-file convert, target directories, temp directory for HDD/NAS performance, directory grouping in scans, custom output directory for converted files, HDR10 conversion, and more.
 
 See [CHANGELOG.md](CHANGELOG.md) for full details.
 
