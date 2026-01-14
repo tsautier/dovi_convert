@@ -89,6 +89,7 @@ class Config:
     auto_yes: bool = False
     include_simple: bool = False
     delete_backup: bool = False
+    candidates_only: bool = False
     temp_dir: Optional[Path] = None
     output_dir: Optional[Path] = None
 
@@ -990,7 +991,8 @@ class DoviConvertApp:
        If no path is given, scans all MKV files in the current directory.
 
        Options:
-         {BOLD}-r [depth]{RESET}   Scan subdirectories recursively. Default depth: 5.
+          {BOLD}-r [depth]{RESET}      Scan subdirectories recursively. Default depth: 5.
+          {BOLD}-candidates{RESET}    Show only conversion candidates (Profile 7).
 
   {BOLD}-convert [file] [file2] ...{RESET}
        Converts file(s) to Profile 8.1. Multiple files supported.
@@ -998,8 +1000,8 @@ class DoviConvertApp:
        The original file is NOT deleted; it is renamed to *.mkv.bak.dovi_convert.
 
        Options:
-         {BOLD}-force{RESET}   Override 'Complex FEL' detection.
-         {BOLD}-temp [path]{RESET}  Write temp files to a faster drive.
+          {BOLD}-force{RESET}         Override 'Complex FEL' detection.
+          {BOLD}-temp [path]{RESET}   Write temp files to a faster drive.
 
   {BOLD}-inspect [file]{RESET}
        Full frame-by-frame inspection of brightness metadata.
@@ -1009,27 +1011,27 @@ class DoviConvertApp:
        Note: Reads entire file. Slower than the default scan.
 
        Options:
-         {BOLD}-safe{RESET}    Force Safe Mode (Disk Extraction fallback).
+          {BOLD}-safe{RESET}   Force Safe Mode (Disk Extraction fallback).
 
   {BOLD}-batch [dir] [dir2] ...{RESET}
        Batch convert safe Profile 7 files from directories.
        If no directory given, uses current directory.
 
        Options:
-         {BOLD}-r [depth]{RESET}   Scan subdirectories recursively. Default depth: 5.
-         {BOLD}-y{RESET}               Skip confirmation prompts (Auto-Yes).
-         {BOLD}-include-simple{RESET}  Allow auto-conversion of Simple FEL files in Auto-Yes mode.
-         {BOLD}-force{RESET}           Force convert 'Complex FEL' files (Apply to all).
-         {BOLD}-delete{RESET}          Auto-delete backups after successful conversion.
-         {BOLD}-temp [path]{RESET}       Write temp files to a faster drive.
+          {BOLD}-r [depth]{RESET}       Scan subdirectories recursively. Default depth: 5.
+          {BOLD}-y{RESET}               Skip confirmation prompts (Auto-Yes).
+          {BOLD}-include-simple{RESET}  Allow auto-conversion of Simple FEL files in Auto-Yes mode.
+          {BOLD}-force{RESET}           Force convert 'Complex FEL' files (Apply to all).
+          {BOLD}-delete{RESET}          Auto-delete backups after successful conversion.
+          {BOLD}-temp [path]{RESET}     Write temp files to a faster drive.
 
   {BOLD}-cleanup{RESET}
        Scans for and deletes {CYAN}*.mkv.bak.dovi_convert{RESET} files in the current directory.
        {BOLD}Safety Check:{RESET} Checks if 'Parent' MKV exists before deleting orphan backups.
 
        Options:
-         {BOLD}-r{RESET}       Recursive scan.
-         {BOLD}-y{RESET}       Skip confirmation prompts.
+          {BOLD}-r{RESET}   Recursive scan.
+          {BOLD}-y{RESET}   Skip confirmation prompts.
 
   {BOLD}-update-check{RESET}
        Checks if a newer version of dovi_convert is available.
@@ -1843,14 +1845,22 @@ class DoviConvertApp:
         
         print(f"{CYAN}Running Scanning {location}...{RESET}")
         
+        # Use provided files or find them
+        mkv_files = files if files else self._find_mkv_files(max_depth)
+        
+        # DVY-35: Early return if no files found
+        if not mkv_files:
+            print("No MKV files found.")
+            return
+        
         # Print table header
         print(f"{'Filename':<50} {'Format':<36} Action")
         print("-" * 96)
         
         simple_count = 0
-        
-        # Use provided files or find them
-        mkv_files = files if files else self._find_mkv_files(max_depth)
+        candidate_count = 0
+        filtered_count = 0
+        candidates_only = self.config.candidates_only
         
         # Only show directory headers if multiple directories
         unique_dirs = len(set(f.parent for f in mkv_files))
@@ -1858,14 +1868,23 @@ class DoviConvertApp:
         current_directory = None
         
         for mkv_file in mkv_files:
+            self.analyze_file(mkv_file)
+            
+            # DVY-46: Filter for candidates only
+            is_candidate = "CONVERT" in self.action
+            if candidates_only and not is_candidate:
+                filtered_count += 1
+                continue
+            
+            if is_candidate:
+                candidate_count += 1
+            
             # Directory header for grouping (only if multiple directories)
             if show_headers and mkv_file.parent != current_directory:
                 if current_directory is not None:
                     print()  # Blank line between directories
                 print(f"{BOLD}DIRECTORY: {mkv_file.parent}{RESET}")
                 current_directory = mkv_file.parent
-            
-            self.analyze_file(mkv_file)
             
             name = mkv_file.name
             if len(name) > 50:
@@ -1881,6 +1900,12 @@ class DoviConvertApp:
             
             print(f"{name:<50} {self.dovi_status:<36} {self.action}")
 
+        # DVY-46: Summary for candidates-only mode
+        if candidates_only:
+            if candidate_count == 0:
+                print("\nNo conversion candidates found.")
+            else:
+                print(f"\nShowing {candidate_count} candidate(s). {filtered_count} file(s) filtered.")
         
         # Conditional Advisory
         if simple_count > 0:
@@ -2773,6 +2798,8 @@ def main() -> None:
                 if i + 1 < len(rest) and rest[i + 1].isdigit():
                     depth = int(rest[i + 1])
                     i += 1
+            elif rest[i] == "-candidates":
+                config.candidates_only = True
             else:
                 paths.append(rest[i])
             i += 1
