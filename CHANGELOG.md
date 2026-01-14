@@ -5,9 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v7.3.0] - 2026-01-14
+
+### New Features
+- **HDR10 Conversion:** New `-hdr10` flag for `-convert` to convert to HDR10 instead of Dolby Vision profile 8.1. Retains HDR10+ metadata if present in the source. Useful for Complex FEL files where you want to prevent devices like the Shield from converting to 8.1 when it shouldn't. Read the docs for more info.
+
+- **Scan Filter:** New `-candidates` flag for `-scan` to show only files that can be converted, filtering out SDR, HDR10, Profile 8, etc. Useful for quickly identifying conversion targets in large libraries.
+
+
+### Changed
+- Cleaned up `-help` message formatting.
+- `-scan` now displays a clear message when no MKV files are found instead of an empty table.
+
+
 ## [v7.2.0] - 2026-01-12
 
-### ✨ New Features
+### New Features
 - **Custom Output Directory:** New `-o` flag to specify a custom output directory for converted files (`-convert file.mkv -o /output`). Works with `-convert` and `-batch`. Read docs for more info. (Ref #4)
 
 ### Changed
@@ -18,10 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [v7.1.0] - 2026-01-07
 
-### ⚠️ Breaking Change
+### Breaking Change
 - **Batch Recursion Syntax:** The shorthand `-batch 2` no longer works. Use `-batch -r 2` instead, matching `-scan` and `-cleanup`.
 
-### ✨ New Features
+### New Features
 - **Multi-File Convert:** Convert multiple files in one command (`-convert file1.mkv file2.mkv`). Works with wildcards (`-convert *.mkv`). A summary is displayed at the end.
 - **Target Directories:** Point `-scan` or `-batch` at specific directories instead of navigating there first (`-batch /movies`). Multiple directories are supported (`-scan /movies /tv`).
 - **Recursive with Directories:** The `-r` flag works with target directories (`-batch /movies -r 3`).
@@ -47,12 +60,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 > **This is a major release.** The tool has been completely rewritten in Python, replacing the original Bash script.
 
-### ⚠️ Breaking Changes
+### Breaking Changes
 - **Python 3.8+ is now required.** The Bash version is no longer maintained.
 - **Dependencies changed:** Removed `jq`, `bc`, `curl`. The script now only requires Python and core media tools.
 - **Docker:** The `:beta` tag will be deprecated. Switch to `:latest`.
 
-### ✨ Highlights (from Beta Cycle)
+### Highlights (from Beta Cycle)
 - **Complete Python rewrite** for improved maintainability and cross-platform compatibility.
 - **5x faster** RPU analysis (`-inspect`) due to native Python processing with streaming parser.
 - **Reduced dependencies** — no more shell utilities like `jq`, `bc`, `curl`, `sed`, `awk`, or `grep`.
@@ -99,7 +112,7 @@ If you were using the `:beta` tag, please update to `:latest`. The `:beta` tag w
 - **Messaging:** Improved clarity of Simple-FEL inclusion messages ("Explicitly included").
 
 ## [v7.0.0-beta1] - 2024-12-30 (Public Beta)
-### ⚡ Python Rewrite & Performance
+### Python Rewrite & Performance
 - **Rewritten from scratch:** The entire tool has been rewritten in Python, replacing the original Bash script.
     - **Why?** To ensure future maintainability, improve stability, and allow for more new features in the future (Bash was getting out of hand).
 - **Performance:** RPU analysis (`-inspect`) is **5x faster** due to native Python processing.
