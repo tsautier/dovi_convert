@@ -90,6 +90,7 @@ class Config:
     include_simple: bool = False
     delete_backup: bool = False
     candidates_only: bool = False
+    hdr10_mode: bool = False
     temp_dir: Optional[Path] = None
     output_dir: Optional[Path] = None
 
@@ -926,6 +927,7 @@ class DoviConvertApp:
         print("  -delete       Auto-delete backups on success")
         print("  -temp [path]  Use temp directory for intermediate files")
         print("  -o [path]     Output directory for converted files")
+        print("  -hdr10        Strip DV, keep HDR10 (single file only)")
     
     def print_help(self) -> None:
         """Print detailed manual page."""
@@ -1000,6 +1002,7 @@ class DoviConvertApp:
        The original file is NOT deleted; it is renamed to *.mkv.bak.dovi_convert.
 
        Options:
+          {BOLD}-hdr10{RESET}         Convert to HDR10 instead of DoVi Profile 8.1.
           {BOLD}-force{RESET}         Override 'Complex FEL' detection.
           {BOLD}-temp [path]{RESET}   Write temp files to a faster drive.
 
@@ -1082,6 +1085,13 @@ class DoviConvertApp:
        
        Convert: Files placed directly in output directory.
        Batch:   Basename of source directory preserved, subdirectories mirrored.
+
+  {BOLD}-hdr10{RESET} [Convert only]
+       {YELLOW}HDR10 Mode.{RESET}
+       Converts to HDR10 (with HDR10+ metadata, if available in the source)
+       instead of DoVi Profile 8.1. Read docs for use cases.
+       
+       Not available in batch mode.
 """
         # Use pager if available and stdout is a tty
         if shutil.which("less") and sys.stdout.isatty():
@@ -1445,8 +1455,14 @@ class DoviConvertApp:
                 stderr=subprocess.PIPE
             )
             
+            # Choose dovi_tool command based on mode
+            if self.config.hdr10_mode:
+                dovi_cmd = ["dovi_tool", "remove", "-", "-o", str(output_file)]
+            else:
+                dovi_cmd = ["dovi_tool", "-m", "2", "convert", "--discard", "-", "-o", str(output_file)]
+            
             dovi_proc = subprocess.Popen(
-                ["dovi_tool", "-m", "2", "convert", "--discard", "-", "-o", str(output_file)],
+                dovi_cmd,
                 stdin=ffmpeg_proc.stdout,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
@@ -1537,9 +1553,13 @@ class DoviConvertApp:
         spinner = Spinner("[1/3] Converting... ")
         spinner.start()
         
-        ret, _, _ = self.media.run_logged(
-            ["dovi_tool", "-m", "2", "convert", "--discard", str(raw_temp), "-o", str(output_file)]
-        )
+        # Choose dovi_tool command based on mode
+        if self.config.hdr10_mode:
+            dovi_cmd = ["dovi_tool", "remove", str(raw_temp), "-o", str(output_file)]
+        else:
+            dovi_cmd = ["dovi_tool", "-m", "2", "convert", "--discard", str(raw_temp), "-o", str(output_file)]
+        
+        ret, _, _ = self.media.run_logged(dovi_cmd)
         spinner.stop()
         
         raw_temp.unlink(missing_ok=True)
@@ -1598,16 +1618,19 @@ class DoviConvertApp:
         """Setup paths. Returns (conv_hevc, temp_mkv, backup_mkv, final_output_path) or None on error."""
         base_name = filepath.stem
         
+        # Choose suffix based on conversion mode
+        suffix = "hdr10" if self.config.hdr10_mode else "p81"
+        
         # Use temp_dir for intermediate files if specified, otherwise use source directory
         # Route conv_hevc to temp_dir if specified (Design B: only HEVC goes to temp)
         if self.config.temp_dir:
-            conv_hevc = self.config.temp_dir / f"{base_name}.p81.hevc"
+            conv_hevc = self.config.temp_dir / f"{base_name}.{suffix}.hevc"
         else:
-            conv_hevc = filepath.with_name(f"{base_name}.p81.hevc")
+            conv_hevc = filepath.with_name(f"{base_name}.{suffix}.hevc")
         
         # temp_mkv uses .tmp extension to prevent automation retrigger
         # Always stays in source directory for efficient I/O
-        temp_mkv = filepath.with_name(f"{base_name}.p81.tmp")
+        temp_mkv = filepath.with_name(f"{base_name}.{suffix}.tmp")
         backup_mkv = filepath.with_suffix(".mkv.bak.dovi_convert")
         
         # Calculate final output path
@@ -2711,6 +2734,8 @@ def main() -> None:
             config.debug_mode = True
         elif arg == "-delete":
             config.delete_backup = True
+        elif arg == "-hdr10":
+            config.hdr10_mode = True
         elif arg in ("-temp", "--temp-dir", "-o"):
             # Mark for pass 2 (value parsing)
             args.append(arg)
@@ -2864,6 +2889,12 @@ def main() -> None:
         app.cmd_inspect(Path(rest[0]))
     
     elif command == "-batch":
+        # HDR10 mode is single-file only
+        if config.hdr10_mode:
+            print(f"{RED}Error: -hdr10 is not available in batch mode.{RESET}")
+            print("       HDR10 conversion should be done one file at a time.")
+            sys.exit(1)
+        
         # Smart -r parsing: extract depth from anywhere in args
         depth = 1
         paths = []
