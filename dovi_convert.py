@@ -909,8 +909,10 @@ class DoviConvertApp:
     
     def print_usage(self) -> None:
         """Print quick usage help."""
-        print(f"{BOLD}dovi_convert v{VERSION}{RESET}")
-        print("Usage:")
+        print()
+        print(f"{CYAN}{BOLD}dovi_convert v{VERSION}{RESET}")
+        print()
+        print(f"{BOLD}Usage:{RESET}")
         print(f"  {BOLD}dovi_convert -help{RESET}               Show detailed manual & examples.")
         print("  dovi_convert -scan [path]        Scan file(s) or directory.")
         print("  dovi_convert -inspect [file]     Full RPU structure inspection.")
@@ -919,15 +921,16 @@ class DoviConvertApp:
         print("  dovi_convert -cleanup            Delete tool backups.")
         print("  dovi_convert -update-check       Check for software updates.")
         print()
-        print("Common Options:")
+        print(f"{BOLD}Common Options:{RESET}")
         print("  -r N          Recursive depth (for -scan, -batch, -cleanup)")
         print("  -y            Auto-confirm prompts")
-        print("  -force        Override Complex FEL warnings")
+        print("  -force        Force convert Complex FEL files")
         print("  -safe         Force disk extraction mode")
         print("  -delete       Auto-delete backups on success")
-        print("  -temp [path]  Use temp directory for intermediate files")
+        print("  -temp [path]  Use temp directory for temporary files")
         print("  -o [path]     Output directory for converted files")
         print("  -hdr10        Strip DV, keep HDR10 (single file only)")
+        print()
     
     def print_help(self) -> None:
         """Print detailed manual page."""
