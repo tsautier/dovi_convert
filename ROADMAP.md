@@ -7,18 +7,15 @@ This document outlines planned future development for `dovi_convert`.
 
 ## Planned (in no particular order)
 
-- **Convert to HDR10 (Strip DV)** — Command to convert P7 files to pure, spec-compliant HDR10 by completely removing Dolby Vision metadata. Useful for Complex FEL titles where P8.1 conversion is undesirable and you are using a device that does not fallback to HDR (*cough* Shield *cough*).
-
 - **Backup & Restore** — Dedicated feature to backup original Dolby Vision layers (EL + RPU) into compact `.dovi` archives before conversion. This enables you to convert to P8.1 or HDR10 and delete the original, while retaining the ability to bit-perfectly restore the full Profile 7 source later (e.g., for future FEL-capable hardware). Saves ~90% disk space compared to keeping full backups (~10GB vs ~80GB).
 
 - **Adjustable Scan Samples** — Add `-samples N` flag to increase sampling during FEL analysis. Default remains 10; users can set 10-50 for taking more samples and improving the detection of brightness expansion - at the cost of longer processing time. `-inspect` remains the go to option for detailed analysis.
 
 - **FEL Threshold Adjustment** — Reduce false positives in Complex FEL detection by adjusting the brightness threshold. Add `-threshold N` flag for power users who want to fine-tune detection sensitivity.
 
-- **Custom Output Path** — Support `-o /path` flag to write converted files to a different directory. Enables automation workflows (Automator, watch folders) without re-trigger issues.
-
 - **Watch Folder Support** - for Docker users, set up a watch folder to automatically trigger conversions when new files are added to the folder.
 
+- **Store `-inspect`verdicts** - Store the verdicts of `-inspect`, so we can re-use them in `-scan`. Use case: If you verifiy a Simple or Complex FEL scan verdict with `-inspect` and it turns out to be a false positive, future scans will pick this up and report the correct verdict.
 
 ## Under Consideration
 
