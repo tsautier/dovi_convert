@@ -2283,8 +2283,7 @@ class DoviConvertApp:
         pattern = "**/*.mkv.bak.dovi_convert" if recursive else "*.mkv.bak.dovi_convert"
         
         for f in cwd.glob(pattern):
-            parent_file = f.with_suffix("")  # Remove .bak.dovi_convert
-            parent_file = Path(str(parent_file).replace(".bak.dovi_convert", ""))
+            parent_file = Path(str(f).replace(".bak.dovi_convert", ""))
             
             if parent_file.exists():
                 files.append(f)
