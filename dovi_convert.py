@@ -31,7 +31,7 @@ from typing import List, Optional, Tuple
 # CONSTANTS
 # =============================================================================
 
-VERSION = "7.3.0"
+VERSION = "7.3.1"
 REPO_URL = "https://api.github.com/repos/cryptochrome/dovi_convert/releases/latest"
 
 # ANSI Colors
@@ -724,64 +724,24 @@ class MediaToolWrapper:
         return info
 
     
-    def get_bl_peak(self, filepath: Path) -> int:
-        """Get base layer peak brightness in nits."""
-        bl_peak = 1000  # Default
-        
-        # Try MediaInfo first
+    def get_bl_peak(self, filepath: Path) -> tuple[int, bool]:
+        """Get base layer peak brightness (MaxCLL) in nits. Returns (value, is_default)."""
         try:
             result = subprocess.run(
-                ["mediainfo", "--Output=Video;%MasteringDisplay_Luminance%", str(filepath)],
+                ["mediainfo", "--Output=Video;%MaxCLL%", str(filepath)],
                 capture_output=True,
                 text=True
             )
-
-            mi_out = result.stdout.strip()
-            
-            if "max:" in mi_out:
-                import re
-                match = re.search(r"max:\s*(\d+)", mi_out)
-                if match:
-                    bl_peak = int(match.group(1))
-            elif mi_out and mi_out[0].isdigit():
-                bl_peak = int(mi_out.split(".")[0])
+            maxcll_str = result.stdout.strip()
+            if maxcll_str and maxcll_str.isdigit():
+                maxcll = int(maxcll_str)
+                if maxcll >= 100:  # Sanity check
+                    return (maxcll, False)
         except Exception as e:
             if self.debug_mode:
-                self.log(f"get_bl_peak mediainfo exception: {e}")
+                self.log(f"get_bl_peak exception: {e}")
         
-        # Fallback to ffprobe (use Popen to read only first line)
-        if bl_peak == 1000:
-            try:
-                # ffprobe outputs many lines for some files, so we read only first line
-                proc = subprocess.Popen(
-                    ["ffprobe", "-v", "error", "-select_streams", "v:0",
-                     "-show_entries", "side_data=max_luminance",
-                     "-of", "default=noprint_wrappers=1:nokey=1", str(filepath)],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
-                    stdin=subprocess.DEVNULL,
-                    text=True
-                )
-                # Read only first line, then terminate
-                out = proc.stdout.readline().strip()
-                proc.terminate()
-                proc.wait()
-                
-                if "/" in out:
-                    # Handle rational format (e.g., "10000000/10000")
-                    num, den = out.split("/")
-                    bl_peak = int(int(num) / int(den))
-                elif out and out[0].isdigit():
-                    bl_peak = int(float(out))
-            except Exception as e:
-                if self.debug_mode:
-                    self.log(f"get_bl_peak ffprobe exception: {e}")
-        
-        # Sanity check
-        if bl_peak < 100:
-            bl_peak = 1000
-        
-        return bl_peak
+        return (1000, True)  # Default when MaxCLL unavailable
 
     
     def get_duration_ms(self, filepath: Path) -> int:
@@ -1130,7 +1090,7 @@ class DoviConvertApp:
             ]
         
         # 2. Get base layer peak
-        bl_peak = self.media.get_bl_peak(filepath)
+        bl_peak, _ = self.media.get_bl_peak(filepath)
         threshold = bl_peak + 50
         
         if self.config.debug_mode:
@@ -2579,7 +2539,7 @@ class DoviConvertApp:
         """Print the final inspection report."""
         print(f"\r\033[KCalculating Peak Brightness... Done.")
         
-        bl_peak = self.media.get_bl_peak(filepath)
+        bl_peak, is_default = self.media.get_bl_peak(filepath)
         threshold = bl_peak + 50
         
         if frame_count == 0:
@@ -2596,7 +2556,8 @@ class DoviConvertApp:
             advisory = f"{BOLD}ADVISORY:{RESET}\nFEL Peak ({peak_nits} nits) is within safe range of Base Layer ({bl_peak} nits).\nSafe to convert."
             robust_peak_str = str(peak_nits)
         
-        print(f"{'Base Layer Peak (MDL):':<22} {bl_peak} nits")
+        default_suffix = " (default)" if is_default else ""
+        print(f"{'Base Layer Peak (MaxCLL):':<22} {bl_peak} nits{default_suffix}")
         print(f"{'L1 Analysis:':<22} {frame_count} frames analyzed")
         print(f"{'FEL Peak Brightness:':<22} {robust_peak_str} nits")
         

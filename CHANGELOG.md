@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v7.3.1] - 2026-01-16
+
+### Fixed
+- **Critical:** Fixed incorrect metadata interpretation in base layer peak brightness detection. The tool was reading the wrong HDR10 metadata field, which could affect FEL complexity verdicts in `-scan` and `-inspect`.
+
+### Changed
+- `-inspect` now indicates when MaxCLL metadata is unavailable and a default value is being used ("1000 nits (default)").
+
+
 ## [v7.3.0] - 2026-01-14
 
 ### New Features
