@@ -23,6 +23,8 @@ services:
       # Format: /path/on/host:/data
       - /mnt/media/movies:/data/movies
       - /mnt/media/tv:/data/tv
+      # Add a cache directory (e.g. fast SSD for temp files to use with -temp flag)
+      # - /mnt/path/to/ssd:/cache
       # =========================================================================
       # Web terminal port
       # Access at http://your-nas-ip:7681
