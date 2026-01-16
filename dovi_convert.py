@@ -2556,14 +2556,14 @@ class DoviConvertApp:
             robust_peak_str = str(peak_nits)
         
         default_suffix = " (default)" if is_default else ""
-        print(f"{'Base Layer Peak (MaxCLL):':<22} {bl_peak} nits{default_suffix}")
-        print(f"{'L1 Analysis:':<22} {frame_count} frames analyzed")
-        print(f"{'FEL Peak Brightness:':<22} {robust_peak_str} nits")
+        print(f"{'Base Layer Peak (MaxCLL):':<26} {bl_peak} nits{default_suffix}")
+        print(f"{'L1 Analysis:':<26} {frame_count} frames analyzed")
+        print(f"{'FEL Peak Brightness:':<26} {robust_peak_str} nits")
         
         if isinstance(peak_nits, int) and peak_nits > threshold:
-            print(f"{'Brightness Expansion:':<22} {RED}+{peak_nits - bl_peak} nits (Active){RESET}")
+            print(f"{'Brightness Expansion:':<26} {RED}+{peak_nits - bl_peak} nits (Active){RESET}")
         else:
-            print(f"{'Brightness Expansion:':<22} {GREEN}None (Safe){RESET}")
+            print(f"{'Brightness Expansion:':<26} {GREEN}None (Safe){RESET}")
             print("---------------------------------------------------")
             print(f"{BOLD}VERDICT:{RESET}    {verdict}")
             print("---------------------------------------------------")
