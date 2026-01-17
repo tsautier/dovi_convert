@@ -1,6 +1,7 @@
 # dovi_convert
 
 [![Documentation](https://img.shields.io/badge/docs-doviconvert.com-blue)](https://docs.doviconvert.com)
+[![Homebrew](https://img.shields.io/homebrew/v/dovi_convert)](https://formulae.brew.sh/formula/dovi_convert)
 
 <br>
 
@@ -44,13 +45,15 @@ Missing dependencies are detected and can be installed automatically.
 
 ## Quick Start
 
-> [!IMPORTANT]
-> **Upgrading from v6.x?** v7.0.0 is a complete Python rewrite. Dependencies have changed. Please ensure you have **Python 3.8+** installed and read the updated [installation instructions](https://docs.doviconvert.com/installation/terminal).
->
-> **Docker users:** If you were testing the `:beta` tag, switch to `:latest`. The `:beta` tag will be deprecated.
-
-
 ### Terminal
+
+**Homebrew (macOS/Linux):**
+
+```bash
+brew install dovi_convert
+```
+
+**Manual Installation:**
 
 ```bash
 curl -sSLO https://github.com/cryptochrome/dovi_convert/releases/latest/download/dovi_convert.py
