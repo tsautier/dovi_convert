@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Homebrew** - you can now install dovi_convert via Homebrew (e.g. `brew install dovi_convert`)
+
 ### Fixed
 - `-cleanup` incorrectly flagged valid backups as orphans when the original filename contained multiple dots.
 
