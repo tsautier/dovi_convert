@@ -31,7 +31,7 @@ from typing import List, Optional, Tuple
 # CONSTANTS
 # =============================================================================
 
-VERSION = "7.3.1"
+VERSION = "7.3.2"
 REPO_URL = "https://api.github.com/repos/cryptochrome/dovi_convert/releases/latest"
 
 # ANSI Colors
