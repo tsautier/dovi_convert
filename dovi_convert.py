@@ -25,7 +25,7 @@ import time
 import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 # =============================================================================
 # CONSTANTS
@@ -119,6 +119,59 @@ class ParsedArgs:
     # Path options
     temp_dir: Optional[Path] = None   # convert, batch
     output_dir: Optional[Path] = None # convert, batch
+
+@dataclass
+class FlagDef:
+    """Definition for a command-line flag."""
+    long: str                           # "--temp"
+    field: str                          # "temp_dir" (ParsedArgs field)
+    commands: frozenset                 # frozenset({"convert", "batch"})
+    short: Optional[str] = None         # "-t"
+    takes_value: bool = False           # Does it require an argument?
+    optional_value: bool = False        # Can the value be omitted? (for -r)
+    default_value: Any = None           # Default when optional_value omitted
+
+
+# =============================================================================
+# FLAG REGISTRY - Single source of truth for all command-line flags
+# =============================================================================
+
+FLAGS = [
+    # Global flag (applies to all commands)
+    FlagDef("--debug", "debug",
+            frozenset({"convert", "batch", "scan", "inspect", "cleanup", "update-check"})),
+
+    # convert, batch flags
+    FlagDef("--force", "force", frozenset({"convert", "batch"}), short="-f"),
+    FlagDef("--safe", "safe", frozenset({"convert", "batch", "inspect"}), short="-s"),
+    FlagDef("--delete", "delete_backup", frozenset({"convert", "batch"})),
+    FlagDef("--temp", "temp_dir", frozenset({"convert", "batch"}), short="-t",
+            takes_value=True),
+    FlagDef("--output", "output_dir", frozenset({"convert", "batch"}), short="-o",
+            takes_value=True),
+
+    # convert only
+    FlagDef("--hdr10", "hdr10", frozenset({"convert"})),
+
+    # batch, cleanup flags
+    FlagDef("--yes", "yes", frozenset({"batch", "cleanup"}), short="-y"),
+
+    # batch only
+    FlagDef("--include-simple", "include_simple", frozenset({"batch"})),
+
+    # scan, batch, cleanup (recursive with optional depth value)
+    FlagDef("--recursive", "recursive", frozenset({"scan", "batch", "cleanup"}), short="-r",
+            takes_value=True, optional_value=True, default_value=5),
+
+    # scan only
+    FlagDef("--candidates", "candidates_only", frozenset({"scan"})),
+]
+
+# Build lookup tables (derived, not manually maintained)
+FLAGS_BY_LONG: Dict[str, FlagDef] = {f.long: f for f in FLAGS}
+FLAGS_BY_SHORT: Dict[str, FlagDef] = {f.short: f for f in FLAGS if f.short}
+FLAGS_BY_FIELD: Dict[str, FlagDef] = {f.field: f for f in FLAGS}
+
 
 @dataclass
 class ConversionMetrics:
@@ -2660,17 +2713,12 @@ class DoviConvertApp:
 # ARGUMENT PARSING
 # =============================================================================
 
-# Valid flags per command. Used to reject inapplicable flags with clear errors.
-# Note: "debug" is global and applies to all commands.
+# Valid flags per command - derived from FLAGS registry
 COMMAND_FLAGS = {
-    "convert":      {"force", "safe", "delete_backup", "hdr10", "temp_dir", "output_dir", "debug"},
-    "batch":        {"force", "safe", "yes", "include_simple", "delete_backup", "recursive", "temp_dir", "output_dir", "debug"},
-    "scan":         {"recursive", "candidates_only", "debug"},
-    "inspect":      {"safe", "debug"},
-    "cleanup":      {"recursive", "yes", "debug"},
-    "update-check": {"debug"},
-    "help":         set(),
+    cmd: {f.field for f in FLAGS if cmd in f.commands}
+    for cmd in ["convert", "batch", "scan", "inspect", "cleanup", "update-check"]
 }
+COMMAND_FLAGS["help"] = set()  # help takes no flags
 
 # Legacy command mapping for helpful error messages
 LEGACY_COMMANDS = {
@@ -2689,10 +2737,10 @@ def parse_args(argv: List[str]) -> ParsedArgs:
     """Parse command-line arguments into structured result."""
     parsed = ParsedArgs()
     args = argv[1:]  # Skip script name
-    
+
     if not args:
         return parsed  # No command
-    
+
     # Check for legacy command syntax
     if args[0] in LEGACY_COMMANDS:
         new_cmd = LEGACY_COMMANDS[args[0]]
@@ -2700,82 +2748,70 @@ def parse_args(argv: List[str]) -> ParsedArgs:
         print(f"Use instead: dovi_convert {new_cmd} ...")
         print(f"Run 'dovi_convert --help' for the new syntax.")
         sys.exit(1)
-    
+
     # Extract command
     parsed.command = args[0]
     rest = args[1:]
-    
-    # Parse flags and arguments
+
+    # Parse flags and arguments using FLAGS registry
     i = 0
     while i < len(rest):
         arg = rest[i]
-        
-        # Long flags with values
-        if arg in ("--temp", "-t"):
-            if i + 1 < len(rest):
-                parsed.temp_dir = Path(rest[i + 1])
-                i += 2
-                continue
+
+        # Look up flag in registry
+        flag = FLAGS_BY_LONG.get(arg) or FLAGS_BY_SHORT.get(arg)
+
+        if flag:
+            if flag.takes_value:
+                # Check if next arg exists and isn't a flag
+                has_value = (i + 1 < len(rest) and not rest[i + 1].startswith("-"))
+
+                if has_value:
+                    value = rest[i + 1]
+                    # Handle type conversion based on field
+                    if flag.field in ("temp_dir", "output_dir"):
+                        setattr(parsed, flag.field, Path(value))
+                    elif flag.field == "recursive":
+                        parsed.recursive = True
+                        parsed.recursive_depth = int(value)
+                    i += 2
+                elif flag.optional_value:
+                    # Flag like -r without a number
+                    if flag.field == "recursive":
+                        parsed.recursive = True
+                        parsed.recursive_depth = flag.default_value
+                    i += 1
+                else:
+                    print(f"{RED}Error: {arg} requires an argument.{RESET}")
+                    sys.exit(1)
             else:
-                print(f"{RED}Error: {arg} requires a path argument.{RESET}")
-                sys.exit(1)
-        
-        if arg in ("--output", "-o"):
-            if i + 1 < len(rest):
-                parsed.output_dir = Path(rest[i + 1])
-                i += 2
-                continue
-            else:
-                print(f"{RED}Error: {arg} requires a path argument.{RESET}")
-                sys.exit(1)
-        
-        if arg in ("--recursive", "-r"):
-            parsed.recursive = True
-            parsed.recursive_depth = 5  # default
-            if i + 1 < len(rest) and rest[i + 1].isdigit():
-                parsed.recursive_depth = int(rest[i + 1])
+                # Boolean flag
+                setattr(parsed, flag.field, True)
                 i += 1
+            continue
+
+        # Handle --help / -h specially (changes command)
+        if arg in ("--help", "-h"):
+            parsed.command = "help"
             i += 1
             continue
-        
-        # Boolean flags (long and short forms)
-        if arg in ("--force", "-f"):
-            parsed.force = True
-        elif arg in ("--safe", "-s"):
-            parsed.safe = True
-        elif arg in ("--yes", "-y"):
-            parsed.yes = True
-        elif arg == "--debug":
-            parsed.debug = True
-        elif arg == "--include-simple":
-            parsed.include_simple = True
-        elif arg == "--delete":
-            parsed.delete_backup = True
-        elif arg == "--hdr10":
-            parsed.hdr10 = True
-        elif arg == "--candidates":
-            parsed.candidates_only = True
-        elif arg in ("--help", "-h"):
-            parsed.command = "help"
-        elif arg.startswith("-"):
+
+        # Unknown flag
+        if arg.startswith("-"):
             print(f"{RED}Error: Unknown flag '{arg}'{RESET}")
             print("Run 'dovi_convert --help' for available options.")
             sys.exit(1)
+
+        # Positional argument (file or directory)
+        path = Path(arg)
+        if path.is_dir():
+            parsed.directories.append(path)
         else:
-            # Positional argument (file or directory)
-            path = Path(arg)
-            if path.is_file():
-                parsed.files.append(path)
-            elif path.is_dir():
-                parsed.directories.append(path)
-            elif path.exists():
-                parsed.files.append(path)  # Treat as file
-            else:
-                # Path doesn't exist - let command handle the error
-                parsed.files.append(path)
-        
+            # Treat as file (let command handle non-existent paths)
+            parsed.files.append(path)
+
         i += 1
-    
+
     return parsed
 
 
@@ -2787,22 +2823,15 @@ def dispatch_command(app: 'DoviConvertApp', parsed: ParsedArgs) -> int:
         allowed = COMMAND_FLAGS.get(parsed.command, set())
         
         # Map of flag names to their display names and values
-        flag_checks = [
-            ("force", "--force", parsed.force),
-            ("safe", "--safe", parsed.safe),
-            ("yes", "--yes", parsed.yes),
-            ("include_simple", "--include-simple", parsed.include_simple),
-            ("delete_backup", "--delete", parsed.delete_backup),
-            ("hdr10", "--hdr10", parsed.hdr10),
-            ("candidates_only", "--candidates", parsed.candidates_only),
-            ("recursive", "--recursive", parsed.recursive),
-            ("temp_dir", "--temp", parsed.temp_dir),
-            ("output_dir", "--output", parsed.output_dir),
-        ]
-        
-        for flag_name, flag_display, flag_value in flag_checks:
-            if flag_value and flag_name not in allowed:
-                print(f"{RED}Error: {flag_display} is not applicable to '{parsed.command}' command.{RESET}")
+        # Validate using FLAGS registry
+        for flag in FLAGS:
+            value = getattr(parsed, flag.field, None)
+            # Special case: recursive stores bool in .recursive, depth in .recursive_depth
+            if flag.field == "recursive":
+                value = parsed.recursive
+
+            if value and flag.field not in allowed:
+                print(f"{RED}Error: {flag.long} is not applicable to '{parsed.command}' command.{RESET}")
                 return 1
     
     # Transfer parsed flags to app config
