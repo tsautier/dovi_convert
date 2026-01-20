@@ -96,6 +96,31 @@ class Config:
 
 
 @dataclass
+class ParsedArgs:
+    """Structured result from argument parsing."""
+    command: str = ""                 # "convert", "scan", "batch", etc.
+    files: List[Path] = field(default_factory=list)
+    directories: List[Path] = field(default_factory=list)
+    recursive: bool = False           # Was -r/--recursive specified?
+    recursive_depth: int = 1          # scan, batch, cleanup
+    
+    # Global flag (applies to all commands)
+    debug: bool = False
+    
+    # Command-specific flags
+    force: bool = False               # convert, batch
+    safe: bool = False                # convert, batch, inspect
+    yes: bool = False                 # batch, cleanup
+    include_simple: bool = False      # batch
+    delete_backup: bool = False       # convert, batch
+    hdr10: bool = False               # convert
+    candidates_only: bool = False     # scan
+    
+    # Path options
+    temp_dir: Optional[Path] = None   # convert, batch
+    output_dir: Optional[Path] = None # convert, batch
+
+@dataclass
 class ConversionMetrics:
     """Metrics for a conversion operation."""
     start_time: float = 0.0
@@ -873,23 +898,23 @@ class DoviConvertApp:
         print(f"{CYAN}{BOLD}dovi_convert v{VERSION}{RESET}")
         print()
         print(f"{BOLD}Usage:{RESET}")
-        print(f"  {BOLD}dovi_convert -help{RESET}               Show detailed manual & examples.")
-        print("  dovi_convert -scan [path]        Scan file(s) or directory.")
-        print("  dovi_convert -inspect [file]     Full RPU structure inspection.")
-        print("  dovi_convert -convert [file] ... Convert file(s) to Profile 8.1.")
-        print("  dovi_convert -batch [dir]        Batch convert directory.")
-        print("  dovi_convert -cleanup            Delete tool backups.")
-        print("  dovi_convert -update-check       Check for software updates.")
+        print(f"  {BOLD}dovi_convert --help{RESET}               Show detailed manual & examples.")
+        print("  dovi_convert scan [path]         Scan file(s) or directory.")
+        print("  dovi_convert inspect [file]      Full RPU structure inspection.")
+        print("  dovi_convert convert [file] ...  Convert file(s) to Profile 8.1.")
+        print("  dovi_convert batch [dir]         Batch convert directory.")
+        print("  dovi_convert cleanup             Delete tool backups.")
+        print("  dovi_convert update-check        Check for software updates.")
         print()
         print(f"{BOLD}Common Options:{RESET}")
-        print("  -r N          Recursive depth (for -scan, -batch, -cleanup)")
-        print("  -y            Auto-confirm prompts")
-        print("  -force        Force convert Complex FEL files")
-        print("  -safe         Force disk extraction mode")
-        print("  -delete       Auto-delete backups on success")
-        print("  -temp [path]  Use temp directory for temporary files")
-        print("  -o [path]     Output directory for converted files")
-        print("  -hdr10        Strip DV, keep HDR10 (single file only)")
+        print("  -r, --recursive N   Recursive depth (for scan, batch, cleanup)")
+        print("  -y, --yes           Auto-confirm prompts")
+        print("  -f, --force         Force convert Complex FEL files")
+        print("  -s, --safe          Force disk extraction mode")
+        print("      --delete        Auto-delete backups on success")
+        print("  -t, --temp [path]   Use temp directory for temporary files")
+        print("  -o, --output [path] Output directory for converted files")
+        print("      --hdr10         Strip DV, keep HDR10 (single file only)")
         print()
     
     def print_help(self) -> None:
@@ -914,7 +939,7 @@ class DoviConvertApp:
      Pipes the video stream directly into the conversion tool.
      Fast, efficient, and requires zero temporary disk space.
 
-  {BOLD}2. Safe Mode (-safe){RESET}
+  {BOLD}2. Safe Mode (--safe){RESET}
      Extracts the video track to a temporary file on disk, then converts.
      Slower, but robust against files with irregular timestamps or
      'Seamless Branching' structures (common on Disney/Marvel discs).
@@ -949,27 +974,27 @@ class DoviConvertApp:
 
 {BOLD}COMMANDS{RESET}
 
-  {BOLD}-scan [path] [path2] ...{RESET}  (alias: -check)
+  {BOLD}scan [path] [path2] ...{RESET}
        Scan files or directories to identify format and conversion candidates.
        Detects HDR formats and analyzes Profile 7 files for FEL complexity.
 
        If no path is given, scans all MKV files in the current directory.
 
        Options:
-          {BOLD}-r [depth]{RESET}      Scan subdirectories recursively. Default depth: 5.
-          {BOLD}-candidates{RESET}    Show only conversion candidates (Profile 7).
+          {BOLD}-r, --recursive [depth]{RESET}   Scan subdirectories. Default depth: 5.
+          {BOLD}--candidates{RESET}              Show only conversion candidates (Profile 7).
 
-  {BOLD}-convert [file] [file2] ...{RESET}
+  {BOLD}convert [file] [file2] ...{RESET}
        Converts file(s) to Profile 8.1. Multiple files supported.
        Skips 'Complex FEL' files to prevent data loss.
        The original file is NOT deleted; it is renamed to *.mkv.bak.dovi_convert.
 
        Options:
-          {BOLD}-hdr10{RESET}         Convert to HDR10 instead of DoVi Profile 8.1.
-          {BOLD}-force{RESET}         Override 'Complex FEL' detection.
-          {BOLD}-temp [path]{RESET}   Write temp files to a faster drive.
+          {BOLD}--hdr10{RESET}           Convert to HDR10 instead of DoVi Profile 8.1.
+          {BOLD}-f, --force{RESET}       Override 'Complex FEL' detection.
+          {BOLD}-t, --temp [path]{RESET} Write temp files to a faster drive.
 
-  {BOLD}-inspect [file]{RESET}
+  {BOLD}inspect [file]{RESET}
        Full frame-by-frame inspection of brightness metadata.
        Verifies whether the FEL contains active brightness expansion.
        Use this to verify Simple FEL verdicts, or if you want absolute certainty.
@@ -977,79 +1002,79 @@ class DoviConvertApp:
        Note: Reads entire file. Slower than the default scan.
 
        Options:
-          {BOLD}-safe{RESET}   Force Safe Mode (Disk Extraction fallback).
+          {BOLD}-s, --safe{RESET}   Force Safe Mode (Disk Extraction fallback).
 
-  {BOLD}-batch [dir] [dir2] ...{RESET}
+  {BOLD}batch [dir] [dir2] ...{RESET}
        Batch convert safe Profile 7 files from directories.
        If no directory given, uses current directory.
 
        Options:
-          {BOLD}-r [depth]{RESET}       Scan subdirectories recursively. Default depth: 5.
-          {BOLD}-y{RESET}               Skip confirmation prompts (Auto-Yes).
-          {BOLD}-include-simple{RESET}  Allow auto-conversion of Simple FEL files in Auto-Yes mode.
-          {BOLD}-force{RESET}           Force convert 'Complex FEL' files (Apply to all).
-          {BOLD}-delete{RESET}          Auto-delete backups after successful conversion.
-          {BOLD}-temp [path]{RESET}     Write temp files to a faster drive.
+          {BOLD}-r, --recursive [depth]{RESET}   Scan subdirectories. Default depth: 5.
+          {BOLD}-y, --yes{RESET}                 Skip confirmation prompts (Auto-Yes).
+          {BOLD}--include-simple{RESET}          Allow auto-conversion of Simple FEL in Auto-Yes mode.
+          {BOLD}-f, --force{RESET}               Force convert 'Complex FEL' files (Apply to all).
+          {BOLD}--delete{RESET}                  Auto-delete backups after successful conversion.
+          {BOLD}-t, --temp [path]{RESET}         Write temp files to a faster drive.
 
-  {BOLD}-cleanup{RESET}
+  {BOLD}cleanup{RESET}
        Scans for and deletes {CYAN}*.mkv.bak.dovi_convert{RESET} files in the current directory.
        {BOLD}Safety Check:{RESET} Checks if 'Parent' MKV exists before deleting orphan backups.
 
        Options:
-          {BOLD}-r{RESET}   Recursive scan.
-          {BOLD}-y{RESET}   Skip confirmation prompts.
+          {BOLD}-r, --recursive{RESET}   Recursive scan.
+          {BOLD}-y, --yes{RESET}         Skip confirmation prompts.
 
-  {BOLD}-update-check{RESET}
+  {BOLD}update-check{RESET}
        Checks if a newer version of dovi_convert is available.
 
 {BOLD}OPTION DETAILS{RESET}
 
-  {BOLD}-force{RESET} [Convert, Batch]
+  {BOLD}-f, --force{RESET} [convert, batch]
        {RED}Force Conversion.{RESET}
        Overrides the 'Complex FEL' detection. Use this if you want to convert
        a Complex FEL file despite the potential loss of brightness data.
 
-  {BOLD}-include-simple{RESET} [Batch]
+  {BOLD}--include-simple{RESET} [batch]
        {YELLOW}Auto-Include Simple FEL.{RESET}
-       When using -y (Auto-Yes), Simple FEL files are normally skipped to allow
+       When using --yes (Auto-Yes), Simple FEL files are normally skipped to allow
        manual review. This flag includes them in batch conversions.
 
-  {BOLD}-safe{RESET}  [Convert, Batch]
+  {BOLD}-s, --safe{RESET}  [convert, batch]
        {YELLOW}Force Safe Mode (Extraction).{RESET}
        Forces extraction of the video track to disk before converting.
        This is the robust fallback method usually triggered automatically on error,
        but you can force it manually here for known problematic files.
 
-  {BOLD}-delete{RESET} [Convert, Batch]
+  {BOLD}--delete{RESET} [convert, batch]
        {YELLOW}Auto-Delete Mode.{RESET}
        Automatically deletes the backup (Original Source) file immediately
        after a successful conversion and verification.
        Use this for large batches where you don't have disk space to store backups.
 
-  {BOLD}-debug{RESET} [Global]
+  {BOLD}--debug{RESET} [Global]
        {YELLOW}Debug Mode.{RESET}
        Generates a 'dovi_convert_debug.log' file in the current directory
        containing full ffmpeg/dovi_tool output. Essential for troubleshooting.
 
-  {BOLD}-y{RESET}     [Batch, Cleanup]
+  {BOLD}-y, --yes{RESET} [batch, cleanup]
        {YELLOW}Auto-Yes Mode.{RESET}
        Automatically answers 'Yes' to confirmation prompts (Batch Start / Cleanup).
        Does NOT override safety decisions (like Safe Mode fallback).
 
-  {BOLD}-temp [path]{RESET} [Convert, Batch]
+  {BOLD}-t, --temp [path]{RESET} [convert, batch]
        {YELLOW}Temp Directory.{RESET}
        Write temporary files to a separate directory.
        Use this when source files are on slow storage (HDD, NAS).
        The temp directory should be on a fast drive (SSD/NVMe).
 
-  {BOLD}-o [path]{RESET} [Convert, Batch]
+  {BOLD}-o, --output [path]{RESET} [convert, batch]
        {YELLOW}Output Directory.{RESET}
        Place converted files in specified directory.
        
        Convert: Files placed directly in output directory.
        Batch:   Basename of source directory preserved, subdirectories mirrored.
 
-  {BOLD}-hdr10{RESET} [Convert only]
+  {BOLD}--hdr10{RESET} [convert only]
        {YELLOW}HDR10 Mode.{RESET}
        Converts to HDR10 (with HDR10+ metadata, if available in the source)
        instead of DoVi Profile 8.1. Read docs for use cases.
@@ -2635,6 +2660,259 @@ class DoviConvertApp:
 # MAIN ENTRY POINT
 # =============================================================================
 
+# Legacy command mapping for helpful error messages
+LEGACY_COMMANDS = {
+    "-convert": "convert",
+    "-scan": "scan",
+    "-check": "scan",
+    "-batch": "batch",
+    "-inspect": "inspect",
+    "-cleanup": "cleanup",
+    "-update-check": "update-check",
+    "-help": "--help",
+}
+
+
+def parse_args(argv: List[str]) -> ParsedArgs:
+    """Parse command-line arguments into structured result."""
+    parsed = ParsedArgs()
+    args = argv[1:]  # Skip script name
+    
+    if not args:
+        return parsed  # No command
+    
+    # Check for legacy command syntax
+    if args[0] in LEGACY_COMMANDS:
+        new_cmd = LEGACY_COMMANDS[args[0]]
+        print(f"{RED}Error: '{args[0]}' syntax was removed in v8.0.0{RESET}")
+        print(f"Use instead: dovi_convert {new_cmd} ...")
+        print(f"Run 'dovi_convert --help' for the new syntax.")
+        sys.exit(1)
+    
+    # Extract command
+    parsed.command = args[0]
+    rest = args[1:]
+    
+    # Parse flags and arguments
+    i = 0
+    while i < len(rest):
+        arg = rest[i]
+        
+        # Long flags with values
+        if arg in ("--temp", "-t"):
+            if i + 1 < len(rest):
+                parsed.temp_dir = Path(rest[i + 1])
+                i += 2
+                continue
+            else:
+                print(f"{RED}Error: {arg} requires a path argument.{RESET}")
+                sys.exit(1)
+        
+        if arg in ("--output", "-o"):
+            if i + 1 < len(rest):
+                parsed.output_dir = Path(rest[i + 1])
+                i += 2
+                continue
+            else:
+                print(f"{RED}Error: {arg} requires a path argument.{RESET}")
+                sys.exit(1)
+        
+        if arg in ("--recursive", "-r"):
+            parsed.recursive = True
+            parsed.recursive_depth = 5  # default
+            if i + 1 < len(rest) and rest[i + 1].isdigit():
+                parsed.recursive_depth = int(rest[i + 1])
+                i += 1
+            i += 1
+            continue
+        
+        # Boolean flags (long and short forms)
+        if arg in ("--force", "-f"):
+            parsed.force = True
+        elif arg in ("--safe", "-s"):
+            parsed.safe = True
+        elif arg in ("--yes", "-y"):
+            parsed.yes = True
+        elif arg == "--debug":
+            parsed.debug = True
+        elif arg == "--include-simple":
+            parsed.include_simple = True
+        elif arg == "--delete":
+            parsed.delete_backup = True
+        elif arg == "--hdr10":
+            parsed.hdr10 = True
+        elif arg == "--candidates":
+            parsed.candidates_only = True
+        elif arg in ("--help", "-h"):
+            parsed.command = "help"
+        elif arg.startswith("-"):
+            print(f"{RED}Error: Unknown flag '{arg}'{RESET}")
+            print("Run 'dovi_convert --help' for available options.")
+            sys.exit(1)
+        else:
+            # Positional argument (file or directory)
+            path = Path(arg)
+            if path.is_file():
+                parsed.files.append(path)
+            elif path.is_dir():
+                parsed.directories.append(path)
+            elif path.exists():
+                parsed.files.append(path)  # Treat as file
+            else:
+                # Path doesn't exist - let command handle the error
+                parsed.files.append(path)
+        
+        i += 1
+    
+    return parsed
+
+
+def dispatch_command(app: 'DoviConvertApp', parsed: ParsedArgs) -> int:
+    """Route to appropriate command handler. Returns exit code."""
+    
+    # Transfer parsed flags to app config
+    app.config.force_mode = parsed.force
+    app.config.safe_mode = parsed.safe
+    app.config.auto_yes = parsed.yes
+    app.config.debug_mode = parsed.debug
+    app.config.include_simple = parsed.include_simple
+    app.config.delete_backup = parsed.delete_backup
+    app.config.hdr10_mode = parsed.hdr10
+    app.config.candidates_only = parsed.candidates_only
+    app.config.temp_dir = parsed.temp_dir
+    app.config.output_dir = parsed.output_dir
+    
+    # Validate temp/output dirs if specified
+    if parsed.temp_dir:
+        if not parsed.temp_dir.exists():
+            print(f"{RED}Error: Temp directory does not exist: {parsed.temp_dir}{RESET}")
+            return 1
+        if not parsed.temp_dir.is_dir():
+            print(f"{RED}Error: Temp path is not a directory: {parsed.temp_dir}{RESET}")
+            return 1
+        # Writability check
+        try:
+            test_file = parsed.temp_dir / ".dovi_convert_write_test"
+            test_file.touch()
+            test_file.unlink()
+        except Exception:
+            print(f"{RED}Error: Temp directory is not writable: {parsed.temp_dir}{RESET}")
+            return 1
+    
+    if parsed.output_dir:
+        try:
+            parsed.output_dir.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            print(f"{RED}Error: Could not create output directory: {parsed.output_dir}{RESET}")
+            print(f"       {e}")
+            return 1
+        if not parsed.output_dir.is_dir():
+            print(f"{RED}Error: Output path is not a directory: {parsed.output_dir}{RESET}")
+            return 1
+        # Writability check
+        try:
+            test_file = parsed.output_dir / ".dovi_convert_write_test"
+            test_file.touch()
+            test_file.unlink()
+        except Exception:
+            print(f"{RED}Error: Output directory is not writable: {parsed.output_dir}{RESET}")
+            return 1
+    
+    # Dispatch to command handlers
+    if parsed.command == "":
+        UpdateChecker.check_foreground()
+        app.print_usage()
+        UpdateChecker.check_background()
+        return 0
+    
+    elif parsed.command in ("help", "--help"):
+        UpdateChecker.check_foreground()
+        app.print_help()
+        return 0
+    
+    elif parsed.command == "scan":
+        inputs = parsed.files + parsed.directories
+        files = app.collect_inputs(
+            [str(p) for p in inputs] if inputs else [],
+            "scan",
+            parsed.recursive_depth
+        )
+        if len(files) == 1:
+            app.cmd_check_single(files[0])
+        else:
+            app.cmd_check_all(parsed.recursive_depth, files if inputs else None)
+        return 0
+    
+    elif parsed.command == "convert":
+        if not parsed.files:
+            print("Usage: dovi_convert convert [file] [file2] ...")
+            return 1
+        
+        files = app.collect_inputs([str(f) for f in parsed.files], "convert")
+        if not files:
+            print(f"{RED}Error: No valid MKV files found.{RESET}")
+            return 1
+        
+        if len(files) == 1:
+            return app.cmd_convert(files[0], "manual")
+        else:
+            success_count = 0
+            fail_list = []
+            for idx, filepath in enumerate(files, 1):
+                print(f"\n{'=' * 51}")
+                print(f"[{idx}/{len(files)}] {filepath.name}")
+                print("=" * 51)
+                result = app.cmd_convert(filepath, "manual")
+                if result == 0:
+                    success_count += 1
+                elif result == 130:
+                    break
+                else:
+                    fail_list.append(filepath.name)
+            print(f"\n{'=' * 51}")
+            print(f"Processed {success_count} of {len(files)} files.")
+            if fail_list:
+                print(f"Failed: {', '.join(fail_list)}")
+            print("=" * 51)
+            return 0 if not fail_list else 1
+    
+    elif parsed.command == "inspect":
+        if not parsed.files:
+            print("Usage: dovi_convert inspect [file]")
+            return 1
+        app.cmd_inspect(parsed.files[0])
+        return 0
+    
+    elif parsed.command == "batch":
+        if parsed.hdr10:
+            print(f"{RED}Error: --hdr10 is not available in batch mode.{RESET}")
+            print("       HDR10 conversion should be done one file at a time.")
+            return 1
+        
+        inputs = parsed.files + parsed.directories
+        source_dirs = parsed.directories if parsed.directories else None
+        files = app.collect_inputs(
+            [str(p) for p in inputs] if inputs else [],
+            "batch",
+            parsed.recursive_depth
+        )
+        app.cmd_batch(parsed.recursive_depth, files if inputs else None, source_dirs)
+        return 0
+    
+    elif parsed.command == "cleanup":
+        app.cmd_cleanup(parsed.recursive)
+        return 0
+    
+    elif parsed.command == "update-check":
+        UpdateChecker.check_manual()
+        return 0
+    
+    else:
+        print(f"{RED}Unknown command: {parsed.command}{RESET}")
+        app.print_usage()
+        return 1
+
+
 def main() -> None:
     """Main entry point."""
     # Pre-flight: Ghost directory check
@@ -2680,224 +2958,20 @@ def main() -> None:
                 print("     Once installed, dovi_convert will use it to install dependencies automatically.")
             sys.exit(1)
     
-    # Parse arguments (two-pass like Bash)
-    config = Config()
-    args = []
+    # Parse arguments
+    parsed = parse_args(sys.argv)
     
-    for arg in sys.argv[1:]:
-        if arg == "-force":
-            config.force_mode = True
-        elif arg == "-safe":
-            config.safe_mode = True
-        elif arg == "-y":
-            config.auto_yes = True
-        elif arg == "-include-simple":
-            config.include_simple = True
-        elif arg == "-debug":
-            config.debug_mode = True
-        elif arg == "-delete":
-            config.delete_backup = True
-        elif arg == "-hdr10":
-            config.hdr10_mode = True
-        elif arg in ("-temp", "--temp-dir", "-o"):
-            # Mark for pass 2 (value parsing)
-            args.append(arg)
-        else:
-            args.append(arg)
-    
-    # Pass 2: Parse -temp and -o value arguments
-    final_args = []
-    i = 0
-    while i < len(args):
-        if args[i] in ("-temp", "--temp-dir"):
-            if i + 1 < len(args):
-                temp_path = Path(args[i + 1])
-                # Pre-flight validation
-                if not temp_path.exists():
-                    print(f"{RED}Error: Temp directory does not exist: {temp_path}{RESET}")
-                    sys.exit(1)
-                if not temp_path.is_dir():
-                    print(f"{RED}Error: Temp path is not a directory: {temp_path}{RESET}")
-                    sys.exit(1)
-                # Writability check
-                try:
-                    test_file = temp_path / ".dovi_convert_write_test"
-                    test_file.touch()
-                    test_file.unlink()
-                except Exception:
-                    print(f"{RED}Error: Temp directory is not writable: {temp_path}{RESET}")
-                    sys.exit(1)
-                config.temp_dir = temp_path
-                i += 2
-            else:
-                print(f"{RED}Error: -temp requires a path argument.{RESET}")
-                sys.exit(1)
-        elif args[i] == "-o":
-            if i + 1 < len(args):
-                output_path = Path(args[i + 1])
-                # Create directory if it doesn't exist
-                try:
-                    output_path.mkdir(parents=True, exist_ok=True)
-                except Exception as e:
-                    print(f"{RED}Error: Could not create output directory: {output_path}{RESET}")
-                    print(f"       {e}")
-                    sys.exit(1)
-                if not output_path.is_dir():
-                    print(f"{RED}Error: Output path is not a directory: {output_path}{RESET}")
-                    sys.exit(1)
-                # Writability check
-                try:
-                    test_file = output_path / ".dovi_convert_write_test"
-                    test_file.touch()
-                    test_file.unlink()
-                except Exception:
-                    print(f"{RED}Error: Output directory is not writable: {output_path}{RESET}")
-                    sys.exit(1)
-                config.output_dir = output_path
-                i += 2
-            else:
-                print(f"{RED}Error: -o requires a path argument.{RESET}")
-                sys.exit(1)
-        else:
-            final_args.append(args[i])
-            i += 1
-    args = final_args
-    
+    # Create app with config
+    config = Config(debug_mode=parsed.debug)
     app = DoviConvertApp(config)
     
-    # No command: show usage
-    if not args:
-        UpdateChecker.check_foreground()
-        app.print_usage()
-        UpdateChecker.check_background()
-        sys.exit(0)
-    
-    command = args[0]
-    rest = args[1:]
-    
-    if command in ("-check", "-scan"):
-        # Smart -r parsing: extract depth from anywhere in args
-        depth = 1
-        paths = []
-        i = 0
-        while i < len(rest):
-            if rest[i] == "-r":
-                depth = 5  # default if -r with no number
-                if i + 1 < len(rest) and rest[i + 1].isdigit():
-                    depth = int(rest[i + 1])
-                    i += 1
-            elif rest[i] == "-candidates":
-                config.candidates_only = True
-            else:
-                paths.append(rest[i])
-            i += 1
-        
-        # Use shared handler - accepts both files and directories
-        files = app.collect_inputs(paths, "scan", depth)
-        
-        if len(files) == 1:
-            # Single file - use existing single-file scan
-            app.cmd_check_single(files[0])
-        else:
-            # Multiple files or directory scan
-            app.cmd_check_all(depth, files if paths else None)
-    
-    elif command == "-convert":
-        if not rest:
-            print("Usage: -convert [file] [file2] ...")
-            sys.exit(1)
-        
-        # Use shared handler - validates files, rejects directories
-        files = app.collect_inputs(rest, "convert")
-        
-        if not files:
-            print(f"{RED}Error: No valid MKV files found.{RESET}")
-            sys.exit(1)
-        
-        if len(files) == 1:
-            # Single file - existing behavior
-            result = app.cmd_convert(files[0], "manual")
-            sys.exit(result)
-        else:
-            # Multiple files - loop with summary
-            success_count = 0
-            fail_list = []
-            
-            for idx, filepath in enumerate(files, 1):
-                print(f"\n{'=' * 51}")
-                print(f"[{idx}/{len(files)}] {filepath.name}")
-                print("=" * 51)
-                
-                result = app.cmd_convert(filepath, "manual")
-                if result == 0:
-                    success_count += 1
-                elif result == 130:
-                    # User abort
-                    break
-                else:
-                    fail_list.append(filepath.name)
-            
-            # Summary
-            print(f"\n{'=' * 51}")
-            print(f"Processed {success_count} of {len(files)} files.")
-            if fail_list:
-                print(f"Failed: {', '.join(fail_list)}")
-            print("=" * 51)
-            sys.exit(0 if not fail_list else 1)
-    
-    elif command in ("-inspect", "--inspect"):
-        if not rest:
-            print("Usage: -inspect [file]")
-            sys.exit(1)
-        app.cmd_inspect(Path(rest[0]))
-    
-    elif command == "-batch":
-        # HDR10 mode is single-file only
-        if config.hdr10_mode:
-            print(f"{RED}Error: -hdr10 is not available in batch mode.{RESET}")
-            print("       HDR10 conversion should be done one file at a time.")
-            sys.exit(1)
-        
-        # Smart -r parsing: extract depth from anywhere in args
-        depth = 1
-        paths = []
-        i = 0
-        while i < len(rest):
-            if rest[i] == "-r":
-                depth = 5  # default if -r with no number
-                if i + 1 < len(rest) and rest[i + 1].isdigit():
-                    depth = int(rest[i + 1])
-                    i += 1
-            else:
-                paths.append(rest[i])
-            i += 1
-        
-        # Track source directories for -o mode (before collect_inputs resolves to files)
-        source_dirs = [Path(p) for p in paths if Path(p).is_dir()] if paths else None
-        
-        # Use shared handler - directories only, rejects files
-        files = app.collect_inputs(paths, "batch", depth)
-        
-        app.cmd_batch(depth, files if paths else None, source_dirs)
-    
-    elif command == "-cleanup":
-        recursive = "-r" in rest
-        app.cmd_cleanup(recursive)
-    
-    elif command == "-update-check":
-        UpdateChecker.check_manual()
-    
-    elif command in ("-help", "--help"):
-        UpdateChecker.check_foreground()
-        app.print_help()
-    
-    else:
-        print(f"{RED}Unknown command: {command}{RESET}")
-        app.print_usage()
-        sys.exit(1)
+    # Dispatch command
+    exit_code = dispatch_command(app, parsed)
     
     # Trigger background update check on clean exit
     UpdateChecker.check_background()
+    
+    sys.exit(exit_code)
 
 
 if __name__ == "__main__":
