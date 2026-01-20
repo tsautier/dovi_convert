@@ -2657,8 +2657,20 @@ class DoviConvertApp:
 
 
 # =============================================================================
-# MAIN ENTRY POINT
+# ARGUMENT PARSING
 # =============================================================================
+
+# Valid flags per command. Used to reject inapplicable flags with clear errors.
+# Note: "debug" is global and applies to all commands.
+COMMAND_FLAGS = {
+    "convert":      {"force", "safe", "delete_backup", "hdr10", "temp_dir", "output_dir", "debug"},
+    "batch":        {"force", "safe", "yes", "include_simple", "delete_backup", "recursive", "temp_dir", "output_dir", "debug"},
+    "scan":         {"recursive", "candidates_only", "debug"},
+    "inspect":      {"safe", "debug"},
+    "cleanup":      {"recursive", "yes", "debug"},
+    "update-check": {"debug"},
+    "help":         set(),
+}
 
 # Legacy command mapping for helpful error messages
 LEGACY_COMMANDS = {
@@ -2769,6 +2781,29 @@ def parse_args(argv: List[str]) -> ParsedArgs:
 
 def dispatch_command(app: 'DoviConvertApp', parsed: ParsedArgs) -> int:
     """Route to appropriate command handler. Returns exit code."""
+    
+    # Validate flags are applicable to this command
+    if parsed.command and parsed.command not in ("help", "--help", ""):
+        allowed = COMMAND_FLAGS.get(parsed.command, set())
+        
+        # Map of flag names to their display names and values
+        flag_checks = [
+            ("force", "--force", parsed.force),
+            ("safe", "--safe", parsed.safe),
+            ("yes", "--yes", parsed.yes),
+            ("include_simple", "--include-simple", parsed.include_simple),
+            ("delete_backup", "--delete", parsed.delete_backup),
+            ("hdr10", "--hdr10", parsed.hdr10),
+            ("candidates_only", "--candidates", parsed.candidates_only),
+            ("recursive", "--recursive", parsed.recursive),
+            ("temp_dir", "--temp", parsed.temp_dir),
+            ("output_dir", "--output", parsed.output_dir),
+        ]
+        
+        for flag_name, flag_display, flag_value in flag_checks:
+            if flag_value and flag_name not in allowed:
+                print(f"{RED}Error: {flag_display} is not applicable to '{parsed.command}' command.{RESET}")
+                return 1
     
     # Transfer parsed flags to app config
     app.config.force_mode = parsed.force
@@ -2912,6 +2947,10 @@ def dispatch_command(app: 'DoviConvertApp', parsed: ParsedArgs) -> int:
         app.print_usage()
         return 1
 
+
+# =============================================================================
+# MAIN ENTRY POINT
+# =============================================================================
 
 def main() -> None:
     """Main entry point."""
