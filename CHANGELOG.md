@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v8.0.0] - 2026-01-21 BREAKING CHANGES
+
+This is a major release that introduces significant changes to dovi_convert. Please read the docs and the release notes carefully before upgrading. What is breaking? This version introduces a completely rewritten argument parser and command syntax, to align with Unix standards and to make the tool more user-friendly. 
+
+This release also merges the `convert` and `batch` commands into a single, unified `convert` command. 
+
+If you are scripting dovi_convert, you will need to update your scripts to use the new command syntax. 
+
+### New Features
+
+
+### Changed
+- **Command Syntax:** The tool now distinguishes between commands and flags: `dovi_convert [command] [flags] [files]` 
+   - for example: `dovi_convert convert --safe file.mkv` instead of `dovi_convert -convert file.mkv -safe`. 
+   - Commands are now single words without leading hyphens, and flags use a double-hyphen. 
+   - Some of them have short abbreviations (e. g. `-y` for `--yes`). 
+   - See `--help` for more info.
+- **Command Validation:** Added command flag validation to prevent invalid flag combinations.
+- **Code Organization:** Reorganized some code for better maintainability.
+
 ## [v7.3.2] - 2026-01-18    
 
 This is a last "cleanup" release before the next major version 8.0.0
