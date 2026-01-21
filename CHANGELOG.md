@@ -26,6 +26,7 @@ If you are scripting dovi_convert, you will need to update your scripts to use t
    - See `--help` for more info.
 - **Command Validation:** Added command flag validation to prevent invalid flag combinations.
 - **Code Organization:** Reorganized some code for better maintainability.
+- **Help Text Refactor** Refactored help text, separated from main app class (it shouldn't have been in there in the first place)
 
 ## [v7.3.2] - 2026-01-18    
 
