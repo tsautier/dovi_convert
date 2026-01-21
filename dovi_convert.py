@@ -881,71 +881,14 @@ class MediaToolWrapper:
 
 
 # =============================================================================
-# MAIN APPLICATION CLASS
+# HELP TEXT DISPLAY
 # =============================================================================
 
-class DoviConvertApp:
-    """Main application controller."""
-    
-    def __init__(self, config: Config):
-        self.config = config
-        
-        # Check for Native Windows (Not Supported)
-        if os.name == 'nt':
-            print(f"{RED}Error: Native Windows is not officially supported.{RESET}")
-            print(f"       Please use {BOLD}WSL2 (Windows Subsystem for Linux){RESET} or {BOLD}Docker{RESET}.")
-            sys.exit(1)
-        
-        self.media = MediaToolWrapper(debug_mode=config.debug_mode)
-        self.batch_running = False
-        self.abort_requested = False
-        
-        # Current file state
-        self.video_info: Optional[VideoInfo] = None
-        self.scan_result: Optional[ScanResult] = None
-        self.dovi_status = ""
-        self.action = ""
-        
-        # Temp files to cleanup
-        self.temp_files: List[Path] = []
-        
-        # Setup signal handlers
-        signal.signal(signal.SIGINT, self._handle_signal)
-        signal.signal(signal.SIGTERM, self._handle_signal)
-    
-    def _handle_signal(self, signum: int, frame) -> None:
-        """Handle interrupt signals."""
-        self.abort_requested = True
-        self._cleanup()
-        sys.stdout.write("\033[?25h")  # Ensure cursor visible
-        print(f"\n{YELLOW}[!] Process Interrupted by User.{RESET}")
-        print(f"{YELLOW}[!] Cleaning up temporary files... Done.{RESET}")
-        if self.batch_running:
-            print(f"{GREEN}[✓] Original Source file is safe and untouched.{RESET}")
-            return
-        sys.exit(130)
-    
-    def _cleanup(self) -> None:
-        """Clean up temporary files."""
-        for tf in self.temp_files:
-            try:
-                if tf.exists():
-                    tf.unlink()
-            except Exception:
-                pass
-        self.temp_files.clear()
-        
-        # Clean up probe/inspect temp files
-        cwd = Path.cwd()
-        for pattern in ["probe_*.hevc", "probe_*.rpu", "probe_*.json",
-                        "inspect_*.hevc", "inspect_*.rpu", "inspect_*.json"]:
-            for f in cwd.glob(pattern):
-                try:
-                    f.unlink()
-                except Exception:
-                    pass
-    
-    def print_usage(self) -> None:
+class HelpText:
+    """Handles all help and documentation display."""
+
+    @staticmethod
+    def print_usage() -> None:
         """Print quick usage help."""
         print()
         print(f"{CYAN}{BOLD}dovi_convert v{VERSION}{RESET}")
@@ -969,8 +912,9 @@ class DoviConvertApp:
         print("  -o, --output [path] Output directory for converted files")
         print("      --hdr10         Strip DV, keep HDR10 (single file only)")
         print()
-    
-    def print_help(self) -> None:
+
+    @staticmethod
+    def print_help() -> None:
         """Print detailed manual page."""
         help_text = f"""{BOLD}dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter{RESET}
 
@@ -1123,7 +1067,7 @@ class DoviConvertApp:
   {BOLD}-o, --output [path]{RESET} [convert, batch]
        {YELLOW}Output Directory.{RESET}
        Place converted files in specified directory.
-       
+
        Convert: Files placed directly in output directory.
        Batch:   Basename of source directory preserved, subdirectories mirrored.
 
@@ -1131,7 +1075,7 @@ class DoviConvertApp:
        {YELLOW}HDR10 Mode.{RESET}
        Converts to HDR10 (with HDR10+ metadata, if available in the source)
        instead of DoVi Profile 8.1. Read docs for use cases.
-       
+
        Not available in batch mode.
 """
         # Use pager if available and stdout is a tty
@@ -1147,7 +1091,73 @@ class DoviConvertApp:
             except Exception:
                 pass
         print(help_text)
+
+
+# =============================================================================
+# MAIN APPLICATION CLASS
+# =============================================================================
+
+class DoviConvertApp:
+    """Main application controller."""
     
+    def __init__(self, config: Config):
+        self.config = config
+        
+        # Check for Native Windows (Not Supported)
+        if os.name == 'nt':
+            print(f"{RED}Error: Native Windows is not officially supported.{RESET}")
+            print(f"       Please use {BOLD}WSL2 (Windows Subsystem for Linux){RESET} or {BOLD}Docker{RESET}.")
+            sys.exit(1)
+        
+        self.media = MediaToolWrapper(debug_mode=config.debug_mode)
+        self.batch_running = False
+        self.abort_requested = False
+        
+        # Current file state
+        self.video_info: Optional[VideoInfo] = None
+        self.scan_result: Optional[ScanResult] = None
+        self.dovi_status = ""
+        self.action = ""
+        
+        # Temp files to cleanup
+        self.temp_files: List[Path] = []
+        
+        # Setup signal handlers
+        signal.signal(signal.SIGINT, self._handle_signal)
+        signal.signal(signal.SIGTERM, self._handle_signal)
+    
+    def _handle_signal(self, signum: int, frame) -> None:
+        """Handle interrupt signals."""
+        self.abort_requested = True
+        self._cleanup()
+        sys.stdout.write("\033[?25h")  # Ensure cursor visible
+        print(f"\n{YELLOW}[!] Process Interrupted by User.{RESET}")
+        print(f"{YELLOW}[!] Cleaning up temporary files... Done.{RESET}")
+        if self.batch_running:
+            print(f"{GREEN}[✓] Original Source file is safe and untouched.{RESET}")
+            return
+        sys.exit(130)
+    
+    def _cleanup(self) -> None:
+        """Clean up temporary files."""
+        for tf in self.temp_files:
+            try:
+                if tf.exists():
+                    tf.unlink()
+            except Exception:
+                pass
+        self.temp_files.clear()
+        
+        # Clean up probe/inspect temp files
+        cwd = Path.cwd()
+        for pattern in ["probe_*.hevc", "probe_*.rpu", "probe_*.json",
+                        "inspect_*.hevc", "inspect_*.rpu", "inspect_*.json"]:
+            for f in cwd.glob(pattern):
+                try:
+                    f.unlink()
+                except Exception:
+                    pass
+
     def check_fel_complexity(self, filepath: Path) -> ScanResult:
         """Analyze RPU to detect Complex FEL."""
         result = ScanResult()
@@ -2885,13 +2895,13 @@ def dispatch_command(app: 'DoviConvertApp', parsed: ParsedArgs) -> int:
     # Dispatch to command handlers
     if parsed.command == "":
         UpdateChecker.check_foreground()
-        app.print_usage()
+        HelpText.print_usage()
         UpdateChecker.check_background()
         return 0
-    
+
     elif parsed.command in ("help", "--help"):
         UpdateChecker.check_foreground()
-        app.print_help()
+        HelpText.print_help()
         return 0
     
     elif parsed.command == "scan":
@@ -2973,7 +2983,7 @@ def dispatch_command(app: 'DoviConvertApp', parsed: ParsedArgs) -> int:
     
     else:
         print(f"{RED}Unknown command: {parsed.command}{RESET}")
-        app.print_usage()
+        HelpText.print_usage()
         return 1
 
 
