@@ -1,12 +1,26 @@
 #!/usr/bin/env python3
 """
-dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter 
+dovi_convert - Dolby Vision Profile 7 -> 8.1 Converter
+
+Copyright (C) 2025-2026 cryptochrome
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 DESCRIPTION:
   Automates conversion of Dolby Vision Profile 7 MKV files (UHD Blu-ray)
   into Profile 8.1. This ensures compatibility with devices that do not support
   the Enhancement Layer.
-
 """
 
 from __future__ import annotations
