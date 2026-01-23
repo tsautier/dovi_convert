@@ -908,7 +908,7 @@ class HelpText:
         print(f"{CYAN}{BOLD}dovi_convert v{VERSION}{RESET}")
         print()
         print(f"{BOLD}Usage:{RESET}")
-        print(f"  {BOLD}dovi_convert --help{RESET}               Show detailed manual & examples.")
+        print(f"  {BOLD}dovi_convert help{RESET}                Show detailed manual & examples.")
         print("  dovi_convert scan [path]         Scan file(s) or directory.")
         print("  dovi_convert inspect [file]      Full RPU structure inspection.")
         print("  dovi_convert convert [file] ...  Convert file(s) to Profile 8.1.")
@@ -2753,7 +2753,7 @@ LEGACY_COMMANDS = {
     "-inspect": "inspect",
     "-cleanup": "cleanup",
     "-update-check": "update-check",
-    "-help": "--help",
+    "-help": "help",
 }
 
 
@@ -2770,7 +2770,7 @@ def parse_args(argv: List[str]) -> ParsedArgs:
         new_cmd = LEGACY_COMMANDS[args[0]]
         print(f"{RED}Error: '{args[0]}' syntax was removed in v8.0.0{RESET}")
         print(f"Use instead: dovi_convert {new_cmd} ...")
-        print(f"Run 'dovi_convert --help' for the new syntax.")
+        print(f"Run 'dovi_convert help' for the new syntax.")
         sys.exit(1)
 
     # Extract command
@@ -2814,16 +2814,10 @@ def parse_args(argv: List[str]) -> ParsedArgs:
                 i += 1
             continue
 
-        # Handle --help / -h specially (changes command)
-        if arg in ("--help", "-h"):
-            parsed.command = "help"
-            i += 1
-            continue
-
         # Unknown flag
         if arg.startswith("-"):
             print(f"{RED}Error: Unknown flag '{arg}'{RESET}")
-            print("Run 'dovi_convert --help' for available options.")
+            print("Run 'dovi_convert help' for available options.")
             sys.exit(1)
 
         # Positional argument (file or directory)
@@ -2843,7 +2837,7 @@ def dispatch_command(app: 'DoviConvertApp', parsed: ParsedArgs) -> int:
     """Route to appropriate command handler. Returns exit code."""
     
     # Validate flags are applicable to this command
-    if parsed.command and parsed.command not in ("help", "--help", ""):
+    if parsed.command and parsed.command not in ("help", ""):
         allowed = COMMAND_FLAGS.get(parsed.command, set())
         
         # Map of flag names to their display names and values
@@ -2913,7 +2907,7 @@ def dispatch_command(app: 'DoviConvertApp', parsed: ParsedArgs) -> int:
         UpdateChecker.check_background()
         return 0
 
-    elif parsed.command in ("help", "--help"):
+    elif parsed.command == "help":
         UpdateChecker.check_foreground()
         HelpText.print_help()
         return 0
@@ -2997,7 +2991,7 @@ def dispatch_command(app: 'DoviConvertApp', parsed: ParsedArgs) -> int:
     
     else:
         print(f"{RED}Unknown command: {parsed.command}{RESET}")
-        HelpText.print_usage()
+        print("Run 'dovi_convert help' for available commands.")
         return 1
 
 
