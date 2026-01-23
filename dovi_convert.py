@@ -1002,7 +1002,7 @@ class HelpText:
 
        Options:
           {BOLD}--hdr10{RESET}           Convert to HDR10 instead of DoVi Profile 8.1.
-          {BOLD}-f, --force{RESET}       Override 'Complex FEL' detection.
+          {BOLD}-f, --force{RESET}       Force convert 'Complex FEL' files.
           {BOLD}-t, --temp [path]{RESET} Write temp files to a faster drive.
 
   {BOLD}inspect [file]{RESET}
