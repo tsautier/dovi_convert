@@ -18,7 +18,7 @@
 #     -v /path/to/movies:/data \
 #     -v /path/to/ssd:/cache \
 #     dovi_convert
-#   Then use: dovi -convert /data/movie.mkv -temp /cache
+#   Then use: dovi_convert convert /data/movie.mkv --temp /cache
 #
 # Run (Web Terminal):
 #   docker run -d \
@@ -197,7 +197,7 @@ echo "║               dovi_convert Docker Container                  ║"
 echo "╠══════════════════════════════════════════════════════════════╣"
 echo "║  Usage:                                                      ║"
 echo "║    dovi (or dovi_convert) # Show quick help                  ║"
-echo "║    dovi -help             # Show full help text              ║"
+echo "║    dovi help              # Show full help text              ║"
 echo "║                                                              ║"
 echo "║  Your files are mounted at: /data                            ║"
 echo "║                                                              ║"
