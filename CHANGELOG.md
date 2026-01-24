@@ -16,9 +16,15 @@ This release also merges the `convert` and `batch` commands into a single, unifi
 If you are scripting dovi_convert, you will need to update your scripts to use the new command syntax. 
 
 ### New Features
-
+- **Unified Convert Command:** The `batch` command has been merged into `convert`. You can now pass both files and directories to `convert`:
+  - `dovi convert file.mkv` - converts a single file
+  - `dovi convert dir/` - scans directory, shows summary, asks for confirmation (batch behavior)
+  - `dovi convert *.mkv` - converts multiple files inline
+  - Directories trigger the familiar batch-style pre-scan with summary and confirmation prompts.
+  - The `--recursive` flag now works with `convert` when directories are provided.
 
 ### Changed
+- **`--yes` Behavior:** When using `--yes` for automated workflows, Simple FEL files are now skipped by default to avoid unexpected prompts. Use `--yes --include-simple` to include them.
 - **Command Syntax:** The tool now distinguishes between commands and flags: `dovi_convert [command] [flags] [files]` 
    - for example: `dovi_convert convert --safe file.mkv` instead of `dovi_convert -convert file.mkv -safe`. 
    - Commands are now single words without leading hyphens, and flags use a double-hyphen. 

@@ -153,28 +153,20 @@ class FlagDef:
 FLAGS = [
     # Global flag (applies to all commands)
     FlagDef("--debug", "debug",
-            frozenset({"convert", "batch", "scan", "inspect", "cleanup", "update-check"})),
+            frozenset({"convert", "scan", "inspect", "cleanup", "update-check"})),
 
-    # convert, batch flags
-    FlagDef("--force", "force", frozenset({"convert", "batch"}), short="-f"),
-    FlagDef("--safe", "safe", frozenset({"convert", "batch", "inspect"}), short="-s"),
-    FlagDef("--delete", "delete_backup", frozenset({"convert", "batch"})),
-    FlagDef("--temp", "temp_dir", frozenset({"convert", "batch"}), short="-t",
+    # convert flags
+    FlagDef("--force", "force", frozenset({"convert"}), short="-f"),
+    FlagDef("--safe", "safe", frozenset({"convert", "inspect"}), short="-s"),
+    FlagDef("--delete", "delete_backup", frozenset({"convert"})),
+    FlagDef("--temp", "temp_dir", frozenset({"convert"}), short="-t",
             takes_value=True),
-    FlagDef("--output", "output_dir", frozenset({"convert", "batch"}), short="-o",
+    FlagDef("--output", "output_dir", frozenset({"convert"}), short="-o",
             takes_value=True),
-
-    # convert only
     FlagDef("--hdr10", "hdr10", frozenset({"convert"})),
-
-    # batch, cleanup flags
-    FlagDef("--yes", "yes", frozenset({"batch", "cleanup"}), short="-y"),
-
-    # batch only
-    FlagDef("--include-simple", "include_simple", frozenset({"batch"})),
-
-    # scan, batch, cleanup (recursive with optional depth value)
-    FlagDef("--recursive", "recursive", frozenset({"scan", "batch", "cleanup"}), short="-r",
+    FlagDef("--yes", "yes", frozenset({"convert", "cleanup"}), short="-y"),
+    FlagDef("--include-simple", "include_simple", frozenset({"convert"})),
+    FlagDef("--recursive", "recursive", frozenset({"scan", "convert", "cleanup"}), short="-r",
             takes_value=True, optional_value=True, default_value=5),
 
     # scan only
@@ -908,17 +900,16 @@ class HelpText:
         print(f"{CYAN}{BOLD}dovi_convert v{VERSION}{RESET}")
         print()
         print(f"{BOLD}Usage:{RESET}")
-        print(f"  {BOLD}dovi_convert help{RESET}                Show detailed manual & examples.")
-        print("  dovi_convert scan [path]         Scan file(s) or directory.")
-        print("  dovi_convert inspect [file]      Full RPU structure inspection.")
-        print("  dovi_convert convert [file] ...  Convert file(s) to Profile 8.1.")
-        print("  dovi_convert batch [dir]         Batch convert directory.")
-        print("  dovi_convert cleanup             Delete tool backups.")
-        print("  dovi_convert update-check        Check for software updates.")
+        print(f"  {BOLD}dovi_convert help{RESET}                  Show detailed manual & examples.")
+        print("  dovi_convert scan [path]           Scan file(s) or directory.")
+        print("  dovi_convert inspect [file]        Full RPU structure inspection.")
+        print("  dovi_convert convert [file|dir]    Convert files or directories.")
+        print("  dovi_convert cleanup               Delete tool backups.")
+        print("  dovi_convert update-check          Check for software updates.")
         print()
         print(f"{BOLD}Common Options:{RESET}")
-        print("  -r, --recursive N   Recursive depth (for scan, batch, cleanup)")
-        print("  -y, --yes           Auto-confirm prompts")
+        print("  -r, --recursive N   Recursive depth (for scan, convert, cleanup)")
+        print("  -y, --yes           Auto-confirm, skip Simple FEL (convert, cleanup)")
         print("  -f, --force         Force convert Complex FEL files")
         print("  -s, --safe          Force disk extraction mode")
         print("      --delete        Auto-delete backups on success")
@@ -995,15 +986,27 @@ class HelpText:
           {BOLD}-r, --recursive [depth]{RESET}   Scan subdirectories. Default depth: 5.
           {BOLD}--candidates{RESET}              Show only conversion candidates (Profile 7).
 
-  {BOLD}convert [file] [file2] ...{RESET}
-       Converts file(s) to Profile 8.1. Multiple files supported.
+  {BOLD}convert [file|dir] [file2|dir2] ...{RESET}
+       Converts file(s) or directory contents to Profile 8.1.
        Skips 'Complex FEL' files to prevent data loss.
        The original file is NOT deleted; it is renamed to *.mkv.bak.dovi_convert.
 
+       When files are specified: Converts them directly (inline mode).
+       When directories are specified: Pre-scans all files, shows summary,
+       then converts with confirmation (batch mode).
+
        Options:
-          {BOLD}--hdr10{RESET}           Convert to HDR10 instead of DoVi Profile 8.1.
-          {BOLD}-f, --force{RESET}       Force convert 'Complex FEL' files.
-          {BOLD}-t, --temp [path]{RESET} Write temp files to a faster drive.
+          {BOLD}--hdr10{RESET}                   Convert to HDR10 instead of DoVi Profile 8.1.
+                                    (Only available for single file conversions.)
+          {BOLD}-f, --force{RESET}               Force convert 'Complex FEL' files.
+          {BOLD}-t, --temp [path]{RESET}         Write temp files to a faster drive.
+          {BOLD}-o, --output [path]{RESET}       Output directory for converted files.
+
+       Additional options for directories:
+          {BOLD}-r, --recursive [depth]{RESET}   Scan subdirectories. Default depth: 5.
+          {BOLD}-y, --yes{RESET}                 Skip prompts, skip Simple FEL files.
+          {BOLD}--include-simple{RESET}          Allow auto-conversion of Simple FEL in Auto-Yes mode.
+          {BOLD}--delete{RESET}                  Auto-delete backups after successful conversion.
 
   {BOLD}inspect [file]{RESET}
        Full frame-by-frame inspection of brightness metadata.
@@ -1014,18 +1017,6 @@ class HelpText:
 
        Options:
           {BOLD}-s, --safe{RESET}   Force Safe Mode (Disk Extraction fallback).
-
-  {BOLD}batch [dir] [dir2] ...{RESET}
-       Batch convert safe Profile 7 files from directories.
-       If no directory given, uses current directory.
-
-       Options:
-          {BOLD}-r, --recursive [depth]{RESET}   Scan subdirectories. Default depth: 5.
-          {BOLD}-y, --yes{RESET}                 Skip confirmation prompts (Auto-Yes).
-          {BOLD}--include-simple{RESET}          Allow auto-conversion of Simple FEL in Auto-Yes mode.
-          {BOLD}-f, --force{RESET}               Force convert 'Complex FEL' files (Apply to all).
-          {BOLD}--delete{RESET}                  Auto-delete backups after successful conversion.
-          {BOLD}-t, --temp [path]{RESET}         Write temp files to a faster drive.
 
   {BOLD}cleanup{RESET}
        Scans for and deletes {CYAN}*.mkv.bak.dovi_convert{RESET} files in the current directory.
@@ -1040,57 +1031,57 @@ class HelpText:
 
 {BOLD}OPTION DETAILS{RESET}
 
-  {BOLD}-f, --force{RESET} [convert, batch]
+  {BOLD}-f, --force{RESET} (convert)
        {RED}Force Conversion.{RESET}
        Overrides the 'Complex FEL' detection. Use this if you want to convert
        a Complex FEL file despite the potential loss of brightness data.
 
-  {BOLD}--include-simple{RESET} [batch]
+  {BOLD}--include-simple{RESET} (convert)
        {YELLOW}Auto-Include Simple FEL.{RESET}
        When using --yes (Auto-Yes), Simple FEL files are normally skipped to allow
-       manual review. This flag includes them in batch conversions.
+       manual review. This flag includes them when converting directories.
 
-  {BOLD}-s, --safe{RESET}  [convert, batch]
+  {BOLD}-s, --safe{RESET} (convert)
        {YELLOW}Force Safe Mode (Extraction).{RESET}
        Forces extraction of the video track to disk before converting.
        This is the robust fallback method usually triggered automatically on error,
        but you can force it manually here for known problematic files.
 
-  {BOLD}--delete{RESET} [convert, batch]
-       {YELLOW}Auto-Delete Mode.{RESET}
+  {BOLD}--delete{RESET} (convert)
+       {RED}Auto-Delete Mode.{RESET}
        Automatically deletes the backup (Original Source) file immediately
        after a successful conversion and verification.
        Use this for large batches where you don't have disk space to store backups.
 
-  {BOLD}--debug{RESET} [Global]
+  {BOLD}--debug{RESET} (global)
        {YELLOW}Debug Mode.{RESET}
        Generates a 'dovi_convert_debug.log' file in the current directory
        containing full ffmpeg/dovi_tool output. Essential for troubleshooting.
 
-  {BOLD}-y, --yes{RESET} [batch, cleanup]
+  {BOLD}-y, --yes{RESET} (convert, cleanup)
        {YELLOW}Auto-Yes Mode.{RESET}
-       Automatically answers 'Yes' to confirmation prompts (Batch Start / Cleanup).
-       Does NOT override safety decisions (like Safe Mode fallback).
+       Automatically answers 'Yes' to confirmation prompts.
+       Simple FEL files are skipped unless --include-simple is also used.
 
-  {BOLD}-t, --temp [path]{RESET} [convert, batch]
+  {BOLD}-t, --temp [path]{RESET} (convert)
        {YELLOW}Temp Directory.{RESET}
        Write temporary files to a separate directory.
        Use this when source files are on slow storage (HDD, NAS).
        The temp directory should be on a fast drive (SSD/NVMe).
 
-  {BOLD}-o, --output [path]{RESET} [convert, batch]
+  {BOLD}-o, --output [path]{RESET} (convert)
        {YELLOW}Output Directory.{RESET}
        Place converted files in specified directory.
 
-       Convert: Files placed directly in output directory.
-       Batch:   Basename of source directory preserved, subdirectories mirrored.
+       Files:       Placed directly in output directory.
+       Directories: Basename of source preserved, subdirectories mirrored.
 
-  {BOLD}--hdr10{RESET} [convert only]
+  {BOLD}--hdr10{RESET} (convert, files only)
        {YELLOW}HDR10 Mode.{RESET}
        Converts to HDR10 (with HDR10+ metadata, if available in the source)
        instead of DoVi Profile 8.1. Read docs for use cases.
 
-       Not available in batch mode.
+       Not available when converting directories.
 """
         # Use pager if available and stdout is a tty
         if shutil.which("less") and sys.stdout.isatty():
@@ -1656,8 +1647,14 @@ class DoviConvertApp:
         
         # Simple FEL Advisory
         if "FEL (Simple)" in self.dovi_status:
-            if self.batch_running and self.config.include_simple:
-                print(f"{CYAN}[i] Simple-FEL: Explicitly included.{RESET}")
+            if self.config.include_simple:
+                print(f"{CYAN}[i] Simple-FEL: Explicitly included (--include-simple).{RESET}")
+            elif self.config.auto_yes:
+                # Safety first: --yes without --include-simple skips Simple FEL
+                if mode == "auto":
+                    return 2
+                print(f"{YELLOW}[!] Simple FEL detected. Skipping (--yes without --include-simple).{RESET}")
+                return 1
             else:
                 print(f"{YELLOW}[!] WARNING: This is a 'Simple FEL' file.{RESET}")
                 print("    Scan found no active brightness expansion.")
@@ -2052,8 +2049,7 @@ class DoviConvertApp:
         Validates inputs based on command rules and returns list of files to process.
         
         Rules:
-        - convert: Files only (directories error)
-        - batch: Directories only (files error)
+        - convert: Both files and directories allowed
         - scan: Both files and directories allowed
         """
         files: List[Path] = []
@@ -2062,14 +2058,8 @@ class DoviConvertApp:
         for arg in args:
             path = Path(arg)
             if path.is_file():
-                if command == "batch":
-                    print(f"{RED}Error: '{arg}' is a file. Use -convert for specific files.{RESET}")
-                    sys.exit(1)
                 files.append(path)
             elif path.is_dir():
-                if command == "convert":
-                    print(f"{RED}Error: '{arg}' is a directory. Use -batch to process directories.{RESET}")
-                    sys.exit(1)
                 directories.append(path)
             else:
                 print(f"{RED}Error: '{arg}' not found.{RESET}")
@@ -2079,11 +2069,11 @@ class DoviConvertApp:
         if directories:
             files.extend(self._find_mkv_files(depth, directories))
         
-        # If no args at all, default to current directory (for scan/batch)
-        if not args and command != "convert":
+        # If no args at all, default to current directory (for scan only)
+        if not args and command == "scan":
             files = self._find_mkv_files(depth)
         
-        return files
+        return sorted(set(files), key=lambda f: str(f))
     
     
     def _build_batch_source_map(self, source_dirs: List[Path], max_depth: int) -> Dict[Path, Path]:
@@ -2145,13 +2135,11 @@ class DoviConvertApp:
         """Batch processing of directory or provided file list."""
         
         conversion_queue: List[Path] = []
-        simple_fel_queue: List[Path] = []
+        file_kind: Dict[Path, str] = {}  # Track classification: "mel", "simple_fel", "forced"
         
         ignored_count = 0
         skipped_count = 0
         complex_count = 0
-        simple_count = 0
-        forced_count = 0
         total_batch_size = 0
         
         if files:
@@ -2165,18 +2153,17 @@ class DoviConvertApp:
         for mkv_file in mkv_files:
             self.analyze_file(mkv_file)
             
-            is_simple = "FEL (Simple)" in self.dovi_status
+            is_simple_fel = "FEL (Simple)" in self.dovi_status
             
             if "CONVERT" in self.action:
                 conversion_queue.append(mkv_file)
                 
                 if "FORCED" in self.action:
-                    forced_count += 1
-                elif is_simple:
-                    simple_count += 1
-                    simple_fel_queue.append(mkv_file)
+                    file_kind[mkv_file] = "forced"
+                elif is_simple_fel:
+                    file_kind[mkv_file] = "simple_fel"
                 else:
-                    simple_count += 1  # MEL counts here too
+                    file_kind[mkv_file] = "mel"
                 
                 total_batch_size += get_file_size(mkv_file)
                 
@@ -2192,53 +2179,73 @@ class DoviConvertApp:
             self.batch_running = False
             return
         
-        # Interactive overview
+        # Count by classification
+        simple_fel_files = [f for f in conversion_queue if file_kind.get(f) == "simple_fel"]
+        simple_fel_count = len(simple_fel_files)
+        simple_fel_excluded = False
+        
+        # Ask about Simple FEL files BEFORE showing summary (so summary is accurate)
+        if simple_fel_count > 0 and not self.config.include_simple:
+            if self.config.auto_yes:
+                # --yes without --include-simple: skip Simple FEL files
+                print(f"\n{YELLOW}[!] {simple_fel_count} Simple-FEL file(s) detected.{RESET}")
+                print(f"    To analyze, use {BOLD}inspect{RESET}. To include, add {BOLD}--include-simple{RESET}.")
+                print(f"    Skipping {simple_fel_count} file(s). Proceeding with remaining files...")
+                simple_fel_excluded = True
+            else:
+                # Interactive: ask user
+                print(f"\n{YELLOW}[!] Found {simple_fel_count} 'Simple FEL' file(s).{RESET}")
+                print(f"    For details, run {BOLD}scan{RESET} first.")
+                try:
+                    reply = input("    Include Simple-FEL files in batch? (y/N) ").strip().lower()
+                except EOFError:
+                    reply = "n"
+                
+                if reply != "y":
+                    simple_fel_excluded = True
+            
+            if simple_fel_excluded:
+                conversion_queue = [f for f in conversion_queue if f not in simple_fel_files]
+        
+        # Compute counts from the final queue
         queue_count = len(conversion_queue)
+        mel_count = sum(1 for f in conversion_queue if file_kind.get(f) == "mel")
+        simple_fel_in_queue = sum(1 for f in conversion_queue if file_kind.get(f) == "simple_fel")
+        forced_count = sum(1 for f in conversion_queue if file_kind.get(f) == "forced")
+        
+        # Early exit if nothing to convert
+        if queue_count == 0:
+            print(f"\n{YELLOW}No files eligible for conversion.{RESET}")
+            if complex_count > 0 or ignored_count > 0 or skipped_count > 0:
+                print(f"  Ignored: {ignored_count} (Not P7), Complex FEL: {complex_count} (Unsafe), Skipped: {skipped_count} (Invalid)")
+            if simple_fel_excluded:
+                print(f"  Simple FEL: {simple_fel_count} (Excluded)")
+            self.batch_running = False
+            return
+        
+        # Recalculate total size after potential exclusions
+        total_batch_size = sum(get_file_size(f) for f in conversion_queue)
         total_size_gb = human_size_gb(total_batch_size)
-        simple_fel_count = len(simple_fel_queue)
-        mel_count = simple_count - simple_fel_count
         
         print(f"\n{BOLD}Batch Overview:{RESET}")
         
         if mel_count > 0:
             print(f"  Convert:        {GREEN}{mel_count}{RESET}   (MEL - Safe)")
-        if simple_fel_count > 0:
-            print(f"  Convert:        {CYAN}{simple_fel_count}{RESET}   (Simple FEL - Likely Safe)")
+        if simple_fel_in_queue > 0:
+            print(f"  Convert:        {CYAN}{simple_fel_in_queue}{RESET}   (Simple FEL - Likely Safe)")
+        if simple_fel_excluded and simple_fel_count > 0:
+            print(f"  Skip:           {YELLOW}{simple_fel_count}{RESET}   (Simple FEL - Excluded)")
         if forced_count > 0:
             print(f"  Convert:        {YELLOW}{forced_count}{RESET}   (Complex FEL - Forced)")
         if complex_count > 0:
             print(f"  Skip:           {RED}{complex_count}{RESET}   (Complex FEL)")
-        print(f"  Queue Size:     {CYAN}{total_size_gb}{RESET} ({queue_count} files)")
+        print(f"  Queue Size:     {CYAN}{total_size_gb}{RESET} ({queue_count} file(s))")
         
-        # Safety gate
+        # Proceed with conversion
         if self.config.auto_yes:
-            if simple_fel_count > 0 and not self.config.include_simple:
-                print(f"\n{YELLOW}[!] {simple_fel_count} Simple-FEL files detected.{RESET}")
-                print(f"    To analyze them, use {BOLD}-inspect{RESET}, to include them in batch conversions, use {BOLD}-include-simple{RESET}")
-                print(f"    Skipping {simple_fel_count} files. Proceeding with the remaining files...")
-                
-                # Filter out Simple FEL files
-                conversion_queue = [f for f in conversion_queue if f not in simple_fel_queue]
-                
-                # Update counters
-                simple_count -= simple_fel_count
-                simple_fel_count = 0
-                queue_count = len(conversion_queue)
-                
-                if queue_count == 0:
-                    print(f"\nNo safe files remaining for conversion.")
-                    self.batch_running = False
-                    return
-            
-            print(f"{YELLOW}Auto-Yes (-y) active. Starting conversion immediately...{RESET}")
+            print(f"\n{YELLOW}Auto-Yes (-y) active. Starting conversion immediately...{RESET}")
             time.sleep(2)
         else:
-            if queue_count == 0:
-                print("\nNo files eligible for conversion.")
-                print(f"Ignored: {ignored_count} (Not P7), Complex FEL: {complex_count} (Unsafe), Skipped: {skipped_count} (Invalid).")
-                self.batch_running = False
-                return
-            
             try:
                 reply = input("\nShow file list? (y/N) ").strip().lower()
             except EOFError:
@@ -2249,29 +2256,8 @@ class DoviConvertApp:
                 for f in conversion_queue:
                     print(f" - {f}")
             
-            if simple_fel_count > 0:
-                print(f"\n{YELLOW}[!] WARNING: Batch includes {simple_fel_count} 'Simple FEL' files.{RESET}")
-                print("    For details, run -scan first.")
-                try:
-                    reply = input("    Include Simple-FEL files in batch? (y/N) ").strip().lower()
-                except EOFError:
-                    reply = "n"
-                
-                if reply == "y":
-                    self.config.include_simple = True
-                else:
-                    print(f"    {YELLOW}Excluding {simple_fel_count} Simple FEL files from run.{RESET}")
-                    # Filter out Simple FEL files
-                    conversion_queue = [f for f in conversion_queue if f not in simple_fel_queue]
-                    queue_count = len(conversion_queue)
-                    
-                    if queue_count == 0:
-                        print(f"\n{YELLOW}No files remaining after exclusion. Exiting.{RESET}")
-                        self.batch_running = False
-                        return
-            
             try:
-                reply = input(f"\nProceed with conversion of {queue_count} files? (Y/n) ").strip().lower()
+                reply = input(f"\nProceed with conversion of {queue_count} file(s)? (Y/n) ").strip().lower()
             except EOFError:
                 reply = "n"
             
@@ -2740,7 +2726,7 @@ class DoviConvertApp:
 # Valid flags per command - derived from FLAGS registry
 COMMAND_FLAGS = {
     cmd: {f.field for f in FLAGS if cmd in f.commands}
-    for cmd in ["convert", "batch", "scan", "inspect", "cleanup", "update-check"]
+    for cmd in ["convert", "scan", "inspect", "cleanup", "update-check"]
 }
 COMMAND_FLAGS["help"] = set()  # help takes no flags
 
@@ -2749,7 +2735,7 @@ LEGACY_COMMANDS = {
     "-convert": "convert",
     "-scan": "scan",
     "-check": "scan",
-    "-batch": "batch",
+    "-batch": "convert",  # batch merged into convert
     "-inspect": "inspect",
     "-cleanup": "cleanup",
     "-update-check": "update-check",
@@ -2797,7 +2783,11 @@ def parse_args(argv: List[str]) -> ParsedArgs:
                         setattr(parsed, flag.field, Path(value))
                     elif flag.field == "recursive":
                         parsed.recursive = True
-                        parsed.recursive_depth = int(value)
+                        try:
+                            parsed.recursive_depth = int(value)
+                        except ValueError:
+                            print(f"{RED}Error: --recursive requires an integer depth.{RESET}")
+                            sys.exit(1)
                     i += 2
                 elif flag.optional_value:
                     # Flag like -r without a number
@@ -2926,18 +2916,51 @@ def dispatch_command(app: 'DoviConvertApp', parsed: ParsedArgs) -> int:
         return 0
     
     elif parsed.command == "convert":
-        if not parsed.files:
-            print("Usage: dovi_convert convert [file] [file2] ...")
+        if not (parsed.files or parsed.directories):
+            print("Usage: dovi_convert convert [file|dir] ...")
             return 1
         
-        files = app.collect_inputs([str(f) for f in parsed.files], "convert")
+        # Determine mode: directories trigger batch-style pre-scan
+        inputs = parsed.files + parsed.directories
+        batch_mode = len(parsed.directories) > 0
+        
+        # --hdr10 restriction in batch mode
+        if batch_mode and parsed.hdr10:
+            print(f"{RED}Error: --hdr10 is not available when processing directories.{RESET}")
+            print("       HDR10 conversion should be done one file at a time.")
+            return 1
+        
+        # Warn if --recursive used without directories
+        if parsed.recursive and not parsed.directories:
+            print(f"{YELLOW}Note: --recursive ignored (no directories provided).{RESET}")
+        
+        # Block mixed inputs (files + directories) with -o to prevent output path collisions
+        if batch_mode and app.config.output_dir and parsed.files:
+            print(f"{RED}Error: Cannot use -o with mixed directories and files.{RESET}")
+            print(f"  Reason: Files with the same name could overwrite each other in the output folder.")
+            print(f"  Solution: Run directories and files separately:")
+            print(f"    dovi convert {parsed.directories[0]} -o {app.config.output_dir}")
+            print(f"    dovi convert {parsed.files[0]} -o {app.config.output_dir}")
+            return 1
+        
+        files = app.collect_inputs(
+            [str(p) for p in inputs],
+            "convert",
+            parsed.recursive_depth
+        )
         if not files:
             print(f"{RED}Error: No valid MKV files found.{RESET}")
             return 1
         
-        if len(files) == 1:
+        if batch_mode:
+            # Batch-style: pre-scan with summary and confirmation
+            source_dirs = parsed.directories if parsed.directories else None
+            app.cmd_batch(parsed.recursive_depth, files, source_dirs)
+            return 0
+        elif len(files) == 1:
             return app.cmd_convert(files[0], "manual")
         else:
+            # Multiple explicit files: inline processing
             success_count = 0
             fail_list = []
             for idx, filepath in enumerate(files, 1):
@@ -2963,22 +2986,6 @@ def dispatch_command(app: 'DoviConvertApp', parsed: ParsedArgs) -> int:
             print("Usage: dovi_convert inspect [file]")
             return 1
         app.cmd_inspect(parsed.files[0])
-        return 0
-    
-    elif parsed.command == "batch":
-        if parsed.hdr10:
-            print(f"{RED}Error: --hdr10 is not available in batch mode.{RESET}")
-            print("       HDR10 conversion should be done one file at a time.")
-            return 1
-        
-        inputs = parsed.files + parsed.directories
-        source_dirs = parsed.directories if parsed.directories else None
-        files = app.collect_inputs(
-            [str(p) for p in inputs] if inputs else [],
-            "batch",
-            parsed.recursive_depth
-        )
-        app.cmd_batch(parsed.recursive_depth, files if inputs else None, source_dirs)
         return 0
     
     elif parsed.command == "cleanup":
