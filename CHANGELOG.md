@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [v8.0.0] - 2026-01-21 BREAKING CHANGES
+## [v8.0.0] - 2026-01-24 - BREAKING CHANGES
 
-This is a major release that introduces significant changes to dovi_convert. Please read the docs and the release notes carefully before upgrading. What is breaking? This version introduces a completely rewritten argument parser and command syntax, to align with Unix standards and to make the tool more user-friendly. 
+This is a major release that introduces significant changes to dovi_convert. Please read the docs and the release notes carefully before upgrading. **Breaking:** This version introduces a completely rewritten argument parser and command syntax, to align with Unix standards and to make the tool more user-friendly. 
 
 This release also merges the `convert` and `batch` commands into a single, unified `convert` command. 
 
@@ -17,9 +17,9 @@ If you are scripting dovi_convert, you will need to update your scripts to use t
 
 ### New Features
 - **Unified Convert Command:** The `batch` command has been merged into `convert`. You can now pass both files and directories to `convert`:
-  - `dovi convert file.mkv` - converts a single file
-  - `dovi convert dir/` - scans directory, shows summary, asks for confirmation (batch behavior)
-  - `dovi convert *.mkv` - converts multiple files inline
+  - `dovi_convert convert file.mkv` - converts a single file
+  - `dovi_convert convert dir/` - scans directory, shows summary, asks for confirmation and converts files found (batch behavior)
+  - `dovi_convert convert *.mkv` - converts multiple files inline
   - Directories trigger the familiar batch-style pre-scan with summary and confirmation prompts.
   - The `--recursive` flag now works with `convert` when directories are provided.
 
@@ -28,11 +28,12 @@ If you are scripting dovi_convert, you will need to update your scripts to use t
 - **Command Syntax:** The tool now distinguishes between commands and flags: `dovi_convert [command] [flags] [files]` 
    - for example: `dovi_convert convert --safe file.mkv` instead of `dovi_convert -convert file.mkv -safe`. 
    - Commands are now single words without leading hyphens, and flags use a double-hyphen. 
-   - Some of them have short abbreviations (e. g. `-y` for `--yes`). 
-   - See `--help` for more info.
+   - Some of them have short abbreviations (e.g. `-y` for `--yes`). 
+   - See `dovi_convert help` for more info.
 - **Command Validation:** Added command flag validation to prevent invalid flag combinations.
 - **Code Organization:** Reorganized some code for better maintainability.
-- **Help Text Refactor** Refactored help text, separated from main app class (it shouldn't have been in there in the first place)
+- **Help Text Refactor** Refactored help text, separated from main app class (it shouldn't have been in there in the first place).
+- **Quick Help:** Streamlined and shortened quick help output, with hint to use `dovi_convert help` for all commands and flags.
 
 ## [v7.3.2] - 2026-01-18    
 
