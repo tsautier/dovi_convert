@@ -13,13 +13,14 @@ Most streaming devices (Apple TV, Shield, Amazon Fire*, etc.) don't support Prof
 
 **dovi_convert** analyzes files first, converts only what's safe, and preserves dynamic metadata for correct Dolby Vision playback.
 
-## What's New (v7.x)
+## What's New (v8.x)
 
-**Key improvements:** 
+**Major Breaking Changes:** 
 
-Multi-file convert, target directories, temp directory for HDD/NAS performance, directory grouping in scans, custom output directory for converted files, HDR10 conversion, and more.
+- Complete rewrite of the CLI interface (argument parsing and syntax).
+- Merged `batch`and `convert` into a new, unified `convert` command that now handles both single file and batch conversions of entire directories.
 
-See [CHANGELOG.md](CHANGELOG.md) for full details.
+Make sure to read the [Changelog](CHANGELOG.md) for full details.
 
 ## Documentation
 
@@ -99,17 +100,17 @@ Access the web terminal at `http://<your-docker-host>:7681`.
 ## Basic Usage
 
 ```bash
-dovi_convert -scan              # Analyze files in current directory
-dovi_convert -convert Movie.mkv # Convert a single file
-dovi_convert -batch             # Batch convert directory
+dovi_convert scan                     # Analyze files in current directory
+dovi_convert convert Movie.mkv        # Convert a single file
+dovi_convert convert /path/to/media   # Batch convert directory
 ```
 
 ## Before You Convert
 
 - Not all Profile 7 files should be converted. Some use the Enhancement Layer for brightness expansion, which causes incorrect tone mapping if removed.
-- The tool detects these "Complex FEL" files and skips them by default. Don't use `-force` unless you understand the consequences.
+- The tool detects these "Complex FEL" files and skips them by default. Don't use `--force` unless you understand the consequences.
 - FEL can also contain film grain, noise, and color data. Retaining this data during conversion requires re-encoding, which is out of scope. Your player can't decode FEL anyway, so this data is already inaccessible. You do retain the Dolby Vision dynamic metadata (RPU).
-- Original files are backed up automatically. The `-delete` flag removes them permanently.
+- Original files are backed up automatically. The `--delete` flag removes them permanently.
 - Read [Before You Start](https://docs.doviconvert.com/before-you-start) for the full explanation.
 
 ## Changelog & Roadmap
