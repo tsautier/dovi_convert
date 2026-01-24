@@ -6,11 +6,14 @@ on:
       - 'v*.*.*'  # Only semantic version tags (e.g., v7.0.0)
   workflow_dispatch:
     inputs:
-      tag_override:
-        description: 'Custom tag for manual builds (defaults to "dev")'
-        required: false
+      build_type:
+        description: 'Build type'
+        required: true
         default: 'dev'
-        type: string
+        type: choice
+        options:
+          - dev
+          - latest
 
 env:
   REGISTRY: docker.io
@@ -37,16 +40,17 @@ jobs:
             TAGS="${{ env.IMAGE_NAME }}:${VERSION},${{ env.IMAGE_NAME }}:latest"
             echo "Building from tag: v${VERSION}"
           else
-            # Manual trigger or branch push -> use custom tag, NEVER latest
-            TAG="${{ inputs.tag_override }}"
-            if [ -z "$TAG" ]; then
-              TAG="dev"
+            # Manual trigger
+            BUILD_TYPE="${{ inputs.build_type }}"
+            if [ "$BUILD_TYPE" == "latest" ]; then
+              TAGS="${{ env.IMAGE_NAME }}:latest"
+              echo "Rebuilding :latest from main branch (hotfix)"
+            else
+              TAGS="${{ env.IMAGE_NAME }}:dev"
+              echo "Building :dev image for testing"
             fi
-            TAGS="${{ env.IMAGE_NAME }}:${TAG}"
-            echo "Building manual/dev image with tag: ${TAG}"
-            echo "::warning::Manual builds are tagged as '${TAG}' only. 'latest' is protected."
           fi
-          
+
           echo "TAGS=${TAGS}" >> $GITHUB_OUTPUT
 
       - name: Check upstream versions
