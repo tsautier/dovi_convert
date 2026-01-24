@@ -45,7 +45,7 @@ from typing import Any, Dict, List, Optional, Tuple
 # CONSTANTS
 # =============================================================================
 
-VERSION = "7.3.2"
+VERSION = "8.0.0"
 REPO_URL = "https://api.github.com/repos/cryptochrome/dovi_convert/releases/latest"
 
 # ANSI Colors
@@ -899,23 +899,15 @@ class HelpText:
         print()
         print(f"{CYAN}{BOLD}dovi_convert v{VERSION}{RESET}")
         print()
-        print(f"{BOLD}Usage:{RESET}")
-        print(f"  {BOLD}dovi_convert help{RESET}                  Show detailed manual & examples.")
-        print("  dovi_convert scan [path]           Scan file(s) or directory.")
-        print("  dovi_convert inspect [file]        Full RPU structure inspection.")
-        print("  dovi_convert convert [file|dir]    Convert files or directories.")
-        print("  dovi_convert cleanup               Delete tool backups.")
-        print("  dovi_convert update-check          Check for software updates.")
+        print(f"{BOLD}Commands:{RESET}")
+        print("  scan [path]           Scan file(s) or directory.")
+        print("  inspect [file]        Full RPU structure inspection.")
+        print("  convert [file|dir]    Convert files or directories.")
+        print("  cleanup               Delete tool backups.")
+        print("  update-check          Check for software updates.")
+        print("  help                  Show full manual.")
         print()
-        print(f"{BOLD}Common Options:{RESET}")
-        print("  -r, --recursive N   Recursive depth (for scan, convert, cleanup)")
-        print("  -y, --yes           Auto-confirm, skip Simple FEL (convert, cleanup)")
-        print("  -f, --force         Force convert Complex FEL files")
-        print("  -s, --safe          Force disk extraction mode")
-        print("      --delete        Auto-delete backups on success")
-        print("  -t, --temp [path]   Use temp directory for temporary files")
-        print("  -o, --output [path] Output directory for converted files")
-        print("      --hdr10         Strip DV, keep HDR10 (single file only)")
+        print(f"{YELLOW}Run '{BOLD}dovi_convert help{RESET}{YELLOW}' for all commands and options.{RESET}")
         print()
 
     @staticmethod
