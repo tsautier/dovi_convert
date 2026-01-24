@@ -15,6 +15,7 @@
 
 # Internal Agent Configuration
 .agent/
+.claude/
 CLAUDE.md
 
 # test video files
