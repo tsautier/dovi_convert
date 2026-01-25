@@ -45,6 +45,7 @@ LABEL version="1.0"
 ENV PUID=1000
 ENV PGID=1000
 ENV TZ=UTC
+ENV TMUX_HISTORY_LIMIT=50000
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -70,6 +71,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     file \
     less \
     locales \
+    tmux \
     bash-completion \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
@@ -160,6 +162,17 @@ if [ -n "${TZ}" ] && [ -f "/usr/share/zoneinfo/${TZ}" ]; then
     echo "${TZ}" > /etc/timezone
 fi
 
+# Configure tmux defaults
+if [[ "${TMUX_HISTORY_LIMIT}" =~ ^[0-9]+$ ]]; then
+    TMUX_HISTORY_LIMIT_VALUE="${TMUX_HISTORY_LIMIT}"
+else
+    TMUX_HISTORY_LIMIT_VALUE="50000"
+fi
+{
+    echo "set -g history-limit ${TMUX_HISTORY_LIMIT_VALUE}"
+    echo "set -g default-terminal tmux-256color"
+} > /etc/tmux.conf
+
 # If running interactively (docker run -it), just exec bash as the user
 if [ -t 0 ] && [ "$#" -eq 0 ]; then
     exec gosu dovi bash
@@ -196,8 +209,12 @@ echo "╔═══════════════════════�
 echo "║               dovi_convert Docker Container                  ║"
 echo "╠══════════════════════════════════════════════════════════════╣"
 echo "║  Usage:                                                      ║"
-echo "║    dovi (or dovi_convert) # Show quick help                  ║"
-echo "║    dovi help              # Show full help text              ║"
+echo "║    dovi (or dovi_convert)    # Show quick help               ║"
+echo "║    dovi help                 # Show full help text           ║"
+echo "║                                                              ║"
+echo "║  Session persistence:                                        ║"
+echo "║    tmux new -s convert       # start persistent session      ║"
+echo "║    tmux attach -t convert    # reconnect to session          ║"
 echo "║                                                              ║"
 echo "║  Your files are mounted at: /data                            ║"
 echo "║                                                              ║"
