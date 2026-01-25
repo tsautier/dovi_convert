@@ -126,6 +126,4 @@ dovi_convert convert /path/to/media   # Batch convert directory
 - [MKVToolNix](https://mkvtoolnix.download/)
 - [MediaInfo](https://mediaarea.net/en/MediaInfo)
 
-## License
-
-MIT
+---
