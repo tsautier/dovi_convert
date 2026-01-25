@@ -48,16 +48,21 @@ from typing import Any, Dict, List, Optional, Tuple
 VERSION = "8.0.0"
 REPO_URL = "https://api.github.com/repos/cryptochrome/dovi_convert/releases/latest"
 
-# ANSI Colors
+# ANSI formatting (always enabled)
 BOLD = "\033[1m"
-RED = "\033[31m"
-GREEN = "\033[32m"
-YELLOW = "\033[33m"
-MAGENTA = "\033[35m"
-CYAN = "\033[36m"
-BLUE = "\033[34m"
-DEFAULT = "\033[39m"
 RESET = "\033[0m"
+
+# ANSI colors (respect NO_COLOR standard: https://no-color.org/)
+if os.environ.get("NO_COLOR"):
+    RED = GREEN = YELLOW = MAGENTA = CYAN = BLUE = DEFAULT = ""
+else:
+    RED = "\033[31m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+    MAGENTA = "\033[35m"
+    CYAN = "\033[36m"
+    BLUE = "\033[34m"
+    DEFAULT = "\033[39m"
 
 # Cache directory
 CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "dovi_convert"
