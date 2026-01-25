@@ -53,6 +53,7 @@ BOLD = "\033[1m"
 RED = "\033[31m"
 GREEN = "\033[32m"
 YELLOW = "\033[33m"
+MAGENTA = "\033[35m"
 CYAN = "\033[36m"
 DEFAULT = "\033[39m"
 RESET = "\033[0m"
@@ -497,7 +498,7 @@ class DependencyManager:
         
         if needs_sudo:
             print()
-            print(f"{YELLOW}Note: Installation requires administrator privileges.{RESET}")
+            print(f"{MAGENTA}Note: Installation requires administrator privileges.{RESET}")
             print("You may be prompted for your password.")
             print()
         
@@ -524,11 +525,11 @@ class DependencyManager:
                         pm_install = "brew install"
                         pkg = brew_pkg
                     else:
-                        print(f"{YELLOW}Not in repos.{RESET}")
+                        print(f"{MAGENTA}Not in repos.{RESET}")
                         manual.append(cmd)
                         continue
                 else:
-                    print(f"{YELLOW}Not in repos.{RESET}")
+                    print(f"{MAGENTA}Not in repos.{RESET}")
                     manual.append(cmd)
                     continue
             
@@ -560,7 +561,7 @@ class DependencyManager:
         if failed:
             print(f"Failed:       {RED}{' '.join(failed)}{RESET}")
         if manual:
-            print(f"Manual Setup: {YELLOW}{' '.join(manual)}{RESET}")
+            print(f"Manual Setup: {MAGENTA}{' '.join(manual)}{RESET}")
         
         if manual or failed:
             print()
@@ -907,7 +908,7 @@ class HelpText:
         print("  update-check          Check for software updates.")
         print("  help                  Show full manual.")
         print()
-        print(f"{YELLOW}Run '{BOLD}dovi_convert help{RESET}{YELLOW}' for all commands and options.{RESET}")
+        print(f"{MAGENTA}Run '{BOLD}dovi_convert help{RESET}{MAGENTA}' for all commands and options.{RESET}")
         print()
 
     @staticmethod
@@ -1029,12 +1030,12 @@ class HelpText:
        a Complex FEL file despite the potential loss of brightness data.
 
   {BOLD}--include-simple{RESET} (convert)
-       {YELLOW}Auto-Include Simple FEL.{RESET}
+       {MAGENTA}Auto-Include Simple FEL.{RESET}
        When using --yes (Auto-Yes), Simple FEL files are normally skipped to allow
        manual review. This flag includes them when converting directories.
 
   {BOLD}-s, --safe{RESET} (convert)
-       {YELLOW}Force Safe Mode (Extraction).{RESET}
+       {MAGENTA}Force Safe Mode (Extraction).{RESET}
        Forces extraction of the video track to disk before converting.
        This is the robust fallback method usually triggered automatically on error,
        but you can force it manually here for known problematic files.
@@ -1046,30 +1047,30 @@ class HelpText:
        Use this for large batches where you don't have disk space to store backups.
 
   {BOLD}--debug{RESET} (global)
-       {YELLOW}Debug Mode.{RESET}
+       {MAGENTA}Debug Mode.{RESET}
        Generates a 'dovi_convert_debug.log' file in the current directory
        containing full ffmpeg/dovi_tool output. Essential for troubleshooting.
 
   {BOLD}-y, --yes{RESET} (convert, cleanup)
-       {YELLOW}Auto-Yes Mode.{RESET}
+       {MAGENTA}Auto-Yes Mode.{RESET}
        Automatically answers 'Yes' to confirmation prompts.
        Simple FEL files are skipped unless --include-simple is also used.
 
   {BOLD}-t, --temp [path]{RESET} (convert)
-       {YELLOW}Temp Directory.{RESET}
+       {MAGENTA}Temp Directory.{RESET}
        Write temporary files to a separate directory.
        Use this when source files are on slow storage (HDD, NAS).
        The temp directory should be on a fast drive (SSD/NVMe).
 
   {BOLD}-o, --output [path]{RESET} (convert)
-       {YELLOW}Output Directory.{RESET}
+       {MAGENTA}Output Directory.{RESET}
        Place converted files in specified directory.
 
        Files:       Placed directly in output directory.
        Directories: Basename of source preserved, subdirectories mirrored.
 
   {BOLD}--hdr10{RESET} (convert, files only)
-       {YELLOW}HDR10 Mode.{RESET}
+       {MAGENTA}HDR10 Mode.{RESET}
        Converts to HDR10 (with HDR10+ metadata, if available in the source)
        instead of DoVi Profile 8.1. Read docs for use cases.
 
@@ -1128,8 +1129,8 @@ class DoviConvertApp:
         self.abort_requested = True
         self._cleanup()
         sys.stdout.write("\033[?25h")  # Ensure cursor visible
-        print(f"\n{YELLOW}[!] Process Interrupted by User.{RESET}")
-        print(f"{YELLOW}[!] Cleaning up temporary files... Done.{RESET}")
+        print(f"\n{MAGENTA}[!] Process Interrupted by User.{RESET}")
+        print(f"{MAGENTA}[!] Cleaning up temporary files... Done.{RESET}")
         if self.batch_running:
             print(f"{GREEN}[✓] Original Source file is safe and untouched.{RESET}")
             return
@@ -1426,17 +1427,17 @@ class DoviConvertApp:
                     status = f"{CYAN}DV Profile 7 FEL (Simple){RESET}"
                     action = f"{CYAN}CONVERT*{RESET}"
             else:
-                status = f"{YELLOW}DV Profile 7 (Check Failed){RESET}"
-                action = f"{YELLOW}MANUAL CHECK{RESET}"
+                status = f"{MAGENTA}DV Profile 7 (Check Failed){RESET}"
+                action = f"{MAGENTA}MANUAL CHECK{RESET}"
             
             return (status, action)
         
         elif "dvhe.08" in mi or "Profile 8" in mi:
             return (f"{DEFAULT}DV Profile 8.1{RESET}", "IGNORE")
         elif "dvhe.05" in mi or "Profile 5" in mi:
-            return (f"{YELLOW}DV Profile 5 (Stream){RESET}", "IGNORE")
+            return (f"{MAGENTA}DV Profile 5 (Stream){RESET}", "IGNORE")
         elif "Dolby Vision" in mi:
-            return (f"{YELLOW}DV Unknown Profile{RESET}", "IGNORE")
+            return (f"{MAGENTA}DV Unknown Profile{RESET}", "IGNORE")
         else:
             # Granular HDR detection
             if "2094" in mi:
@@ -1645,10 +1646,10 @@ class DoviConvertApp:
                 # Safety first: --yes without --include-simple skips Simple FEL
                 if mode == "auto":
                     return 2
-                print(f"{YELLOW}[!] Simple FEL detected. Skipping (--yes without --include-simple).{RESET}")
+                print(f"{MAGENTA}[!] Simple FEL detected. Skipping (--yes without --include-simple).{RESET}")
                 return 1
             else:
-                print(f"{YELLOW}[!] WARNING: This is a 'Simple FEL' file.{RESET}")
+                print(f"{MAGENTA}[!] WARNING: This is a 'Simple FEL' file.{RESET}")
                 print("    Scan found no active brightness expansion.")
                 print("    Use -inspect for a full RPU analysis if in doubt.")
                 try:
@@ -1735,13 +1736,13 @@ class DoviConvertApp:
                     print(f"{RED}CRITICAL ERROR: Disk Full or Permission Denied.{RESET}")
                     return 1
                 elif fail_reason == "STREAM_ERROR":
-                    print(f"{YELLOW}Reason: Stream/Timestamp Error (Likely Seamless Branching).{RESET}")
+                    print(f"{MAGENTA}Reason: Stream/Timestamp Error (Likely Seamless Branching).{RESET}")
                 
                 if self.batch_running:
-                    print(f"{YELLOW}Batch Mode: Skipping file. Retry manually with -safe.{RESET}")
+                    print(f"{MAGENTA}Batch Mode: Skipping file. Retry manually with -safe.{RESET}")
                     return 1
                 else:
-                    print(f"{YELLOW}Suggestion: This file may require Safe Mode (Disk Extraction).{RESET}")
+                    print(f"{MAGENTA}Suggestion: This file may require Safe Mode (Disk Extraction).{RESET}")
                     try:
                         reply = input("Retry with Safe Mode? (Y/n) ").strip().lower()
                     except EOFError:
@@ -1802,7 +1803,7 @@ class DoviConvertApp:
             # DVY-33: Smart Verification Fallback
             # MediaInfo metadata in the source might be wrong (e.g. Avatar.mkv).
             # We run a slow but accurate ffprobe stream count on the ORIGINAL file to double-check.
-            print(f"\r\033[K[3/3] Verifying... {YELLOW}Metadata Mismatch ({frames_orig} vs {frames_new}). Checking Stream...{RESET}")
+            print(f"\r\033[K[3/3] Verifying... {MAGENTA}Metadata Mismatch ({frames_orig} vs {frames_new}). Checking Stream...{RESET}")
             
             ff_orig = self.media.get_frame_count_ffprobe(filepath)
             
@@ -1836,7 +1837,7 @@ class DoviConvertApp:
         
         if self.config.delete_backup:
             backup_mkv.unlink()
-            print(f"{YELLOW}Original Source deleted (-delete active).{RESET}")
+            print(f"{MAGENTA}Original Source deleted (-delete active).{RESET}")
         else:
             print(f"Original Source saved as: {CYAN}{backup_mkv}{RESET}")
         
@@ -2180,13 +2181,13 @@ class DoviConvertApp:
         if simple_fel_count > 0 and not self.config.include_simple:
             if self.config.auto_yes:
                 # --yes without --include-simple: skip Simple FEL files
-                print(f"\n{YELLOW}[!] {simple_fel_count} Simple-FEL file(s) detected.{RESET}")
+                print(f"\n{MAGENTA}[!] {simple_fel_count} Simple-FEL file(s) detected.{RESET}")
                 print(f"    To analyze, use {BOLD}inspect{RESET}. To include, add {BOLD}--include-simple{RESET}.")
                 print(f"    Skipping {simple_fel_count} file(s). Proceeding with remaining files...")
                 simple_fel_excluded = True
             else:
                 # Interactive: ask user
-                print(f"\n{YELLOW}[!] Found {simple_fel_count} 'Simple FEL' file(s).{RESET}")
+                print(f"\n{MAGENTA}[!] Found {simple_fel_count} 'Simple FEL' file(s).{RESET}")
                 print(f"    For details, run {BOLD}scan{RESET} first.")
                 try:
                     reply = input("    Include Simple-FEL files in batch? (y/N) ").strip().lower()
@@ -2207,7 +2208,7 @@ class DoviConvertApp:
         
         # Early exit if nothing to convert
         if queue_count == 0:
-            print(f"\n{YELLOW}No files eligible for conversion.{RESET}")
+            print(f"\n{MAGENTA}No files eligible for conversion.{RESET}")
             if complex_count > 0 or ignored_count > 0 or skipped_count > 0:
                 print(f"  Ignored: {ignored_count} (Not P7), Complex FEL: {complex_count} (Unsafe), Skipped: {skipped_count} (Invalid)")
             if simple_fel_excluded:
@@ -2226,16 +2227,16 @@ class DoviConvertApp:
         if simple_fel_in_queue > 0:
             print(f"  Convert:        {CYAN}{simple_fel_in_queue}{RESET}   (Simple FEL - Likely Safe)")
         if simple_fel_excluded and simple_fel_count > 0:
-            print(f"  Skip:           {YELLOW}{simple_fel_count}{RESET}   (Simple FEL - Excluded)")
+            print(f"  Skip:           {MAGENTA}{simple_fel_count}{RESET}   (Simple FEL - Excluded)")
         if forced_count > 0:
-            print(f"  Convert:        {YELLOW}{forced_count}{RESET}   (Complex FEL - Forced)")
+            print(f"  Convert:        {MAGENTA}{forced_count}{RESET}   (Complex FEL - Forced)")
         if complex_count > 0:
             print(f"  Skip:           {RED}{complex_count}{RESET}   (Complex FEL)")
         print(f"  Queue Size:     {CYAN}{total_size_gb}{RESET} ({queue_count} file(s))")
         
         # Proceed with conversion
         if self.config.auto_yes:
-            print(f"\n{YELLOW}Auto-Yes (-y) active. Starting conversion immediately...{RESET}")
+            print(f"\n{MAGENTA}Auto-Yes (-y) active. Starting conversion immediately...{RESET}")
             time.sleep(2)
         else:
             try:
@@ -2310,7 +2311,7 @@ class DoviConvertApp:
         
         print(f"\n{'=' * 51}")
         if self.abort_requested:
-            print(f"           {YELLOW}{BOLD}BATCH ABORTED BY USER{RESET}")
+            print(f"           {MAGENTA}{BOLD}BATCH ABORTED BY USER{RESET}")
         else:
             print(f"           {BOLD}BATCH PROCESSING COMPLETE{RESET}")
         print("=" * 51)
@@ -2325,7 +2326,7 @@ class DoviConvertApp:
             print(f"  - Converted:   {GREEN}{success_simple_count}{RESET}   {breakdown}")
         
         if success_forced_count > 0:
-            print(f"  - Converted:   {YELLOW}{success_forced_count}{RESET}   (Complex FEL - Forced)")
+            print(f"  - Converted:   {MAGENTA}{success_forced_count}{RESET}   (Complex FEL - Forced)")
         
         if len(success_list) == 0:
             print("  - Converted:   0")
@@ -2334,11 +2335,11 @@ class DoviConvertApp:
         print("Not Processed:")
         print(f"  - Ignored:     {CYAN}{ignored_count}{RESET}   (Not Profile 7)")
         print(f"  - Complex FEL: {RED}{complex_count}{RESET}   (Unsafe / Skipped)")
-        print(f"  - Invalid:     {YELLOW}{skipped_count}{RESET}   (Corrupt / No Track)")
+        print(f"  - Invalid:     {MAGENTA}{skipped_count}{RESET}   (Corrupt / No Track)")
         
         if fail_list:
             print("---------------------------------------------------")
-            print(f"{YELLOW}Failed Files (Likely Seamless Branching / Stream Issues):{RESET}")
+            print(f"{MAGENTA}Failed Files (Likely Seamless Branching / Stream Issues):{RESET}")
             for f in fail_list:
                 print(f" - {f}")
             print()
@@ -2369,7 +2370,7 @@ class DoviConvertApp:
                 files.append(f)
                 total_size += get_file_size(f)
             else:
-                print(f"{YELLOW}Skipping Orphan Backup:{RESET} {f.name}")
+                print(f"{MAGENTA}Skipping Orphan Backup:{RESET} {f.name}")
         
         if not files:
             print("No valid backup files found.")
@@ -2383,7 +2384,7 @@ class DoviConvertApp:
         print(f"\nFound {BOLD}{len(files)} valid backups{RESET} utilizing {BOLD}{size_gb}{RESET}.")
         
         if self.config.auto_yes:
-            print(f"{YELLOW}Auto-Yes (-y) active. Deleting files...{RESET}")
+            print(f"{MAGENTA}Auto-Yes (-y) active. Deleting files...{RESET}")
             reply = "y"
         else:
             try:
@@ -2509,7 +2510,7 @@ class DoviConvertApp:
                     temp_rpu.unlink(missing_ok=True)
                     
                     if self.config.auto_yes:
-                        print(f"{YELLOW}Retrying with Safe Mode (Auto-Yes).{RESET}")
+                        print(f"{MAGENTA}Retrying with Safe Mode (Auto-Yes).{RESET}")
                         use_safe_mode = True
                         continue
                     else:
@@ -2570,7 +2571,7 @@ class DoviConvertApp:
             if not max_vals:
                 # 2. Fallback to Deep JSON Parse
                 if self.config.debug_mode:
-                    print(f"\n{YELLOW}[!] Fast stream scan failed. Falling back to deep JSON parse...{RESET}")
+                    print(f"\n{MAGENTA}[!] Fast stream scan failed. Falling back to deep JSON parse...{RESET}")
                 
                 json_content = temp_json.read_text()
                 data = json.loads(json_content)
@@ -2622,7 +2623,7 @@ class DoviConvertApp:
         threshold = bl_peak + 50
         
         if frame_count == 0:
-            verdict = f"{YELLOW}NO L1 METADATA{RESET}"
+            verdict = f"{MAGENTA}NO L1 METADATA{RESET}"
             advisory = f"{RED}WARNING:{RESET} No valid L1 brightness metadata found in FEL.\nThis is unusual for non-MEL files. Proceed with caution."
             robust_peak_str = "N/A"
         elif peak_nits > threshold:
@@ -2924,7 +2925,7 @@ def dispatch_command(app: 'DoviConvertApp', parsed: ParsedArgs) -> int:
         
         # Warn if --recursive used without directories
         if parsed.recursive and not parsed.directories:
-            print(f"{YELLOW}Note: --recursive ignored (no directories provided).{RESET}")
+            print(f"{MAGENTA}Note: --recursive ignored (no directories provided).{RESET}")
         
         # Block mixed inputs (files + directories) with -o to prevent output path collisions
         if batch_mode and app.config.output_dir and parsed.files:
@@ -3020,7 +3021,7 @@ def main() -> None:
         if reply == "y":
             if sys.platform == "darwin" and not shutil.which("brew"):
                 print()
-                print(f"{YELLOW}Homebrew is not installed.{RESET}")
+                print(f"{MAGENTA}Homebrew is not installed.{RESET}")
                 print("It's the recommended way to install dependencies on macOS.")
                 print()
                 print("Install it from: https://brew.sh")
