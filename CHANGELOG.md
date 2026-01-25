@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- Added support for NO_COLOR environment variable to disable ANSI colors.
+
+### Changed
+- Improved colors for light theme terminals (I was told they exist - I needed sunglasses to test this). Yellow is now Magenta and Cyan is now Blue.
+
+
 ## [v8.0.0] - 2026-01-24 - BREAKING CHANGES
 
 This is a major release that introduces significant changes to dovi_convert. Please read the docs and the release notes carefully before upgrading. **Breaking:** This version introduces a completely rewritten argument parser and command syntax, to align with Unix standards and to make the tool more user-friendly. 
@@ -15,7 +24,7 @@ This release also merges the `convert` and `batch` commands into a single, unifi
 
 If you are scripting dovi_convert, you will need to update your scripts to use the new command syntax. 
 
-### New Features
+### Added
 - **Unified Convert Command:** The `batch` command has been merged into `convert`. You can now pass both files and directories to `convert`:
   - `dovi_convert convert file.mkv` - converts a single file
   - `dovi_convert convert dir/` - scans directory, shows summary, asks for confirmation and converts files found (batch behavior)
@@ -34,6 +43,12 @@ If you are scripting dovi_convert, you will need to update your scripts to use t
 - **Code Organization:** Reorganized some code for better maintainability.
 - **Help Text Refactor** Refactored help text, separated from main app class (it shouldn't have been in there in the first place).
 - **Quick Help:** Streamlined and shortened quick help output, with hint to use `dovi_convert help` for all commands and flags.
+
+### Removed
+- `batch` command removed, merged into `convert`.
+
+### Deprecated
+- old command syntax with `-[command]` (e.g. `-convert`)
 
 ## [v7.3.2] - 2026-01-18    
 
@@ -56,7 +71,7 @@ This is a last "cleanup" release before the next major version 8.0.0
 
 ## [v7.3.0] - 2026-01-14
 
-### New Features
+### Added
 - **HDR10 Conversion:** New `-hdr10` flag for `-convert` to convert to HDR10 instead of Dolby Vision profile 8.1. Retains HDR10+ metadata if present in the source. Useful for Complex FEL files where you want to prevent devices like the Shield from converting to 8.1 when it shouldn't. Read the docs for more info.
 
 - **Scan Filter:** New `-candidates` flag for `-scan` to show only files that can be converted, filtering out SDR, HDR10, Profile 8, etc. Useful for quickly identifying conversion targets in large libraries.
@@ -69,7 +84,7 @@ This is a last "cleanup" release before the next major version 8.0.0
 
 ## [v7.2.0] - 2026-01-12
 
-### New Features
+### Added
 - **Custom Output Directory:** New `-o` flag to specify a custom output directory for converted files (`-convert file.mkv -o /output`). Works with `-convert` and `-batch`. Read docs for more info. (Ref #4)
 
 ### Changed
@@ -83,7 +98,7 @@ This is a last "cleanup" release before the next major version 8.0.0
 ### Breaking Change
 - **Batch Recursion Syntax:** The shorthand `-batch 2` no longer works. Use `-batch -r 2` instead, matching `-scan` and `-cleanup`.
 
-### New Features
+### Added
 - **Multi-File Convert:** Convert multiple files in one command (`-convert file1.mkv file2.mkv`). Works with wildcards (`-convert *.mkv`). A summary is displayed at the end.
 - **Target Directories:** Point `-scan` or `-batch` at specific directories instead of navigating there first (`-batch /movies`). Multiple directories are supported (`-scan /movies /tv`).
 - **Recursive with Directories:** The `-r` flag works with target directories (`-batch /movies -r 3`).
