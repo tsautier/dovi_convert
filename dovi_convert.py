@@ -55,6 +55,7 @@ GREEN = "\033[32m"
 YELLOW = "\033[33m"
 MAGENTA = "\033[35m"
 CYAN = "\033[36m"
+BLUE = "\033[34m"
 DEFAULT = "\033[39m"
 RESET = "\033[0m"
 
@@ -623,10 +624,10 @@ class UpdateChecker:
             try:
                 latest = UPDATE_FILE.read_text().strip()
                 if version_gt(latest, VERSION):
-                    print(f"{CYAN}---------------------------------------------------{RESET}")
+                    print(f"{BLUE}---------------------------------------------------{RESET}")
                     print(f"{BOLD}Update Available:{RESET} {GREEN}{latest}{RESET} (Current: v{VERSION})")
                     print("Get it at: https://github.com/cryptochrome/dovi_convert")
-                    print(f"{CYAN}---------------------------------------------------{RESET}")
+                    print(f"{BLUE}---------------------------------------------------{RESET}")
                     print()
             except Exception:
                 pass
@@ -898,7 +899,7 @@ class HelpText:
     def print_usage() -> None:
         """Print quick usage help."""
         print()
-        print(f"{CYAN}{BOLD}dovi_convert v{VERSION}{RESET}")
+        print(f"{BLUE}{BOLD}dovi_convert v{VERSION}{RESET}")
         print()
         print(f"{BOLD}Commands:{RESET}")
         print("  scan [path]           Scan file(s) or directory.")
@@ -957,7 +958,7 @@ class HelpText:
 {BOLD}AUTOMATIC BACKUPS{RESET}
   The tool automatically preserves your original file before any modification.
   It uses a specific naming convention to distinguish its backups from your own files.
-  Backup File: {CYAN}[filename].mkv.bak.dovi_convert{RESET}
+  Backup File: {BLUE}[filename].mkv.bak.dovi_convert{RESET}
 
 {BOLD}KNOWN LIMITATION: Single Video Track{RESET}
   The {BOLD}converted{RESET} file will contain exactly one video track (the main movie).
@@ -1012,7 +1013,7 @@ class HelpText:
           {BOLD}-s, --safe{RESET}   Force Safe Mode (Disk Extraction fallback).
 
   {BOLD}cleanup{RESET}
-       Scans for and deletes {CYAN}*.mkv.bak.dovi_convert{RESET} files in the current directory.
+       Scans for and deletes {BLUE}*.mkv.bak.dovi_convert{RESET} files in the current directory.
        {BOLD}Safety Check:{RESET} Checks if 'Parent' MKV exists before deleting orphan backups.
 
        Options:
@@ -1424,8 +1425,8 @@ class DoviConvertApp:
                     status = f"{GREEN}DV Profile 7 MEL (Safe){RESET}"
                     action = f"{GREEN}CONVERT{RESET}"
                 else:
-                    status = f"{CYAN}DV Profile 7 FEL (Simple){RESET}"
-                    action = f"{CYAN}CONVERT*{RESET}"
+                    status = f"{BLUE}DV Profile 7 FEL (Simple){RESET}"
+                    action = f"{BLUE}CONVERT*{RESET}"
             else:
                 status = f"{MAGENTA}DV Profile 7 (Check Failed){RESET}"
                 action = f"{MAGENTA}MANUAL CHECK{RESET}"
@@ -1641,7 +1642,7 @@ class DoviConvertApp:
         # Simple FEL Advisory
         if "FEL (Simple)" in self.dovi_status:
             if self.config.include_simple:
-                print(f"{CYAN}[i] Simple-FEL: Explicitly included (--include-simple).{RESET}")
+                print(f"{BLUE}[i] Simple-FEL: Explicitly included (--include-simple).{RESET}")
             elif self.config.auto_yes:
                 # Safety first: --yes without --include-simple skips Simple FEL
                 if mode == "auto":
@@ -1833,13 +1834,13 @@ class DoviConvertApp:
             shutil.move(str(temp_mkv), str(final_output_path))
             spinner.stop()
             print(f"\r\033[KMoving to output directory... Done.")
-            print(f"Output saved to: {CYAN}{final_output_path}{RESET}")
+            print(f"Output saved to: {BLUE}{final_output_path}{RESET}")
         
         if self.config.delete_backup:
             backup_mkv.unlink()
             print(f"{MAGENTA}Original Source deleted (-delete active).{RESET}")
         else:
-            print(f"Original Source saved as: {CYAN}{backup_mkv}{RESET}")
+            print(f"Original Source saved as: {BLUE}{backup_mkv}{RESET}")
         
         conv_hevc.unlink(missing_ok=True)
         return 0
@@ -1921,7 +1922,7 @@ class DoviConvertApp:
         else:
             location = "in current directory"
         
-        print(f"{CYAN}Running Scanning {location}...{RESET}")
+        print(f"{BLUE}Running Scanning {location}...{RESET}")
         
         # Use provided files or find them
         mkv_files = files if files else self._find_mkv_files(max_depth)
@@ -1993,7 +1994,7 @@ class DoviConvertApp:
     def _print_simple_fel_advisory(self) -> None:
         """Print the Simple FEL advisory block."""
         print("=" * 96)
-        print(f"{RED}*{RESET}{BOLD}ADVISORY: UNDERSTANDING 'SIMPLE' (CYAN) VERDICTS{RESET}")
+        print(f"{RED}*{RESET}{BOLD}ADVISORY: UNDERSTANDING 'SIMPLE' (BLUE) VERDICTS{RESET}")
         print("-" * 96)
         print(f"{BOLD}What is 'Simple FEL'?{RESET}")
         print("It means the scan detected no active brightness expansion over the Base Layer. This")
@@ -2225,14 +2226,14 @@ class DoviConvertApp:
         if mel_count > 0:
             print(f"  Convert:        {GREEN}{mel_count}{RESET}   (MEL - Safe)")
         if simple_fel_in_queue > 0:
-            print(f"  Convert:        {CYAN}{simple_fel_in_queue}{RESET}   (Simple FEL - Likely Safe)")
+            print(f"  Convert:        {BLUE}{simple_fel_in_queue}{RESET}   (Simple FEL - Likely Safe)")
         if simple_fel_excluded and simple_fel_count > 0:
             print(f"  Skip:           {MAGENTA}{simple_fel_count}{RESET}   (Simple FEL - Excluded)")
         if forced_count > 0:
             print(f"  Convert:        {MAGENTA}{forced_count}{RESET}   (Complex FEL - Forced)")
         if complex_count > 0:
             print(f"  Skip:           {RED}{complex_count}{RESET}   (Complex FEL)")
-        print(f"  Queue Size:     {CYAN}{total_size_gb}{RESET} ({queue_count} file(s))")
+        print(f"  Queue Size:     {BLUE}{total_size_gb}{RESET} ({queue_count} file(s))")
         
         # Proceed with conversion
         if self.config.auto_yes:
@@ -2320,7 +2321,7 @@ class DoviConvertApp:
         if success_simple_count > 0:
             mel_count = success_simple_count - success_simple_fel_count
             if success_simple_fel_count > 0:
-                breakdown = f"({CYAN}{success_simple_fel_count} Simple FEL{RESET} / {GREEN}{mel_count} MEL{RESET})"
+                breakdown = f"({BLUE}{success_simple_fel_count} Simple FEL{RESET} / {GREEN}{mel_count} MEL{RESET})"
             else:
                 breakdown = f"({GREEN}MEL / Safe{RESET})"
             print(f"  - Converted:   {GREEN}{success_simple_count}{RESET}   {breakdown}")
@@ -2333,7 +2334,7 @@ class DoviConvertApp:
         print(f"  - Failed:      {RED}{len(fail_list)}{RESET}")
         print()
         print("Not Processed:")
-        print(f"  - Ignored:     {CYAN}{ignored_count}{RESET}   (Not Profile 7)")
+        print(f"  - Ignored:     {BLUE}{ignored_count}{RESET}   (Not Profile 7)")
         print(f"  - Complex FEL: {RED}{complex_count}{RESET}   (Unsafe / Skipped)")
         print(f"  - Invalid:     {MAGENTA}{skipped_count}{RESET}   (Corrupt / No Track)")
         
