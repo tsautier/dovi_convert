@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added support for NO_COLOR environment variable to disable ANSI colors.
 
 ### Changed
-- Improved colors for light theme terminals (I was told they exist - I needed sunglasses to test this). Yellow is now Magenta and Cyan is now Blue.
+- Improved colors for light theme terminals (I was told they exist). Yellow is now Magenta and Cyan is now Blue.
 
 
 ## [v8.0.0] - 2026-01-24 - BREAKING CHANGES
