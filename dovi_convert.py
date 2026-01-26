@@ -3009,6 +3009,11 @@ def parse_args(argv: List[str]) -> ParsedArgs:
     if not args:
         return parsed  # No command
 
+    # Handle --help anywhere in arguments
+    if "--help" in args:
+        HelpText.print_help()
+        sys.exit(0)
+
     # Check for legacy command syntax
     if args[0] in LEGACY_COMMANDS:
         new_cmd = LEGACY_COMMANDS[args[0]]
