@@ -30,6 +30,7 @@ from contextlib import contextmanager
 import json
 import math
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -64,6 +65,8 @@ else:
     CYAN = "\033[36m"
     BLUE = "\033[34m"
     DEFAULT = "\033[39m"
+
+ANSI_ESCAPE_RE = re.compile(r"\033\[[0-9;]*m")
 
 # Cache directory
 CACHE_DIR = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "dovi_convert"
@@ -1525,7 +1528,7 @@ class DoviConvertApp:
                     action = f"{RED}CONVERT (FORCED){RESET}"
                 else:
                     status = f"{RED}DV Profile 7 FEL (Complex){RESET}"
-                    action = f"{RED}SKIP (Complex FEL){RESET}"
+                    action = f"{RED}SKIP{RESET}"
             elif self.scan_result.verdict == "SAFE":
                 if "MEL" in self.scan_result.reason:
                     status = f"{GREEN}DV Profile 7 MEL (Safe){RESET}"
@@ -2046,8 +2049,11 @@ class DoviConvertApp:
             print("No MKV files found.")
             return
         
+        filename_width = 50
+        format_width = 36
+
         # Print table header
-        print(f"{'Filename':<50} {'Format':<36} Action")
+        print(f"{'Filename':<{filename_width}} {'Format':<{format_width}} Action")
         print("-" * 96)
         
         simple_count = 0
@@ -2080,18 +2086,15 @@ class DoviConvertApp:
                 current_directory = mkv_file.parent
             
             name = mkv_file.name
-            if len(name) > 50:
-                name = name[:47] + "..."
+            if len(name) > filename_width:
+                name = name[: filename_width - 3] + "..."
             
             if "FEL (Simple)" in self.dovi_status:
                 simple_count += 1
             
-            # Strip ANSI codes for length calculation
-            import re
-            status_plain = re.sub(r'\033\[[0-9;]*m', '', self.dovi_status)
-            action_plain = re.sub(r'\033\[[0-9;]*m', '', self.action)
-            
-            print(f"{name:<50} {self.dovi_status:<36} {self.action}")
+            status_visible_len = len(ANSI_ESCAPE_RE.sub("", self.dovi_status))
+            status_padding = max(0, format_width - status_visible_len)
+            print(f"{name:<{filename_width}} {self.dovi_status}{' ' * status_padding} {self.action}")
 
         # DVY-46: Summary for candidates-only mode
         if candidates_only:
