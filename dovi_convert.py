@@ -26,6 +26,7 @@ DESCRIPTION:
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import json
 import math
 import os
@@ -112,6 +113,7 @@ class Config:
     delete_backup: bool = False
     candidates_only: bool = False
     hdr10_mode: bool = False
+    verbose_mode: bool = False
     temp_dir: Optional[Path] = None
     output_dir: Optional[Path] = None
 
@@ -136,7 +138,8 @@ class ParsedArgs:
     delete_backup: bool = False       # convert, batch
     hdr10: bool = False               # convert
     candidates_only: bool = False     # scan
-    
+    verbose: bool = False             # convert (batch mode - show detailed output)
+
     # Path options
     temp_dir: Optional[Path] = None   # convert, batch
     output_dir: Optional[Path] = None # convert, batch
@@ -175,6 +178,7 @@ FLAGS = [
     FlagDef("--include-simple", "include_simple", frozenset({"convert"})),
     FlagDef("--recursive", "recursive", frozenset({"scan", "convert", "cleanup"}), short="-r",
             takes_value=True, optional_value=True, default_value=5),
+    FlagDef("--verbose", "verbose", frozenset({"convert"}), short="-v"),
 
     # scan only
     FlagDef("--candidates", "candidates_only", frozenset({"scan"})),
@@ -359,13 +363,23 @@ def send_notification(title: str, message: str) -> None:
     if sys.platform == "darwin":
         try:
             subprocess.run(
-                ["osascript", "-e", 
+                ["osascript", "-e",
                  f'display notification "{message}" with title "{title}" sound name "Glass"'],
                 capture_output=True,
                 timeout=5
             )
         except Exception:
             pass
+
+
+def truncate_middle(filename: str, max_width: int) -> str:
+    """Truncate filename in the middle, preserving start and end."""
+    if len(filename) <= max_width:
+        return filename
+    available = max_width - 3  # for "..."
+    start_len = available // 2
+    end_len = available - start_len
+    return filename[:start_len] + "..." + filename[-end_len:]
 
 
 # =============================================================================
@@ -423,6 +437,89 @@ class Spinner:
         # Show cursor
         sys.stdout.write("\033[?25h")
         sys.stdout.flush()
+
+
+class CompactBatchSpinner:
+    """Specialized spinner for compact batch mode table rows."""
+
+    def __init__(self, prefix: str, filename: str, fmt_str: str, filename_width: int):
+        self.prefix = prefix
+        self.filename = filename
+        self.fmt_str = fmt_str
+        self.filename_width = filename_width
+        self.running = False
+        self.thread: Optional[threading.Thread] = None
+        self.start_time = 0.0
+
+        # Capture stdout at init time (before suppress_output() redirects it)
+        self._stdout = sys.stdout
+
+        # Check for UTF-8 support
+        lang = os.environ.get("LANG", "") + os.environ.get("LC_ALL", "")
+        self.use_braille = "UTF-8" in lang.upper()
+
+        if self.use_braille:
+            self.spinstr = "\u280b\u2819\u2839\u2838\u283c\u2834\u2826\u2827\u2807\u280f"
+        else:
+            self.spinstr = "|/-\\"
+
+    def _spin(self) -> None:
+        idx = 0
+        while self.running:
+            elapsed = int(time.time() - self.start_time)
+            minutes = elapsed // 60
+            seconds = elapsed % 60
+            char = self.spinstr[idx % len(self.spinstr)]
+
+            # Format: [prefix] filename   format   spinner (elapsed)
+            progress = f"{char} ({minutes}m {seconds:02d}s)"
+            line = f"{self.prefix} {self.filename:<{self.filename_width}}{self.fmt_str:<17}{progress}"
+            self._stdout.write(f"\r\033[K{line}")
+            self._stdout.flush()
+
+            idx += 1
+            time.sleep(0.1)
+
+    def start(self) -> None:
+        """Start the spinner."""
+        self.running = True
+        self.start_time = time.time()
+        # Hide cursor
+        self._stdout.write("\033[?25l")
+        self._stdout.flush()
+        self.thread = threading.Thread(target=self._spin, daemon=True)
+        self.thread.start()
+
+    def stop(self, success: bool) -> None:
+        """Stop spinner and print final status."""
+        self.running = False
+        if self.thread:
+            self.thread.join(timeout=0.5)
+        # Show cursor
+        self._stdout.write("\033[?25h")
+        self._stdout.flush()
+
+        # Print final status
+        if success:
+            status = f"{GREEN}done{RESET}"
+        else:
+            status = f"{RED}failed{RESET}"
+
+        line = f"{self.prefix} {self.filename:<{self.filename_width}}{self.fmt_str:<17}{status}"
+        self._stdout.write(f"\r\033[K{line}\n")
+        self._stdout.flush()
+
+
+@contextmanager
+def suppress_output():
+    """Temporarily suppress stdout for compact batch mode."""
+    old_stdout = sys.stdout
+    sys.stdout = open(os.devnull, 'w')
+    try:
+        yield
+    finally:
+        sys.stdout.close()
+        sys.stdout = old_stdout
 
 
 # =============================================================================
@@ -1004,6 +1101,7 @@ class HelpText:
        Additional options for directories:
           {BOLD}-r, --recursive [depth]{RESET}   Scan subdirectories. Default depth: 5.
           {BOLD}-y, --yes{RESET}                 Skip prompts, skip Simple FEL files.
+          {BOLD}-v, --verbose{RESET}             Show detailed per-file output (default is compact).
           {BOLD}--include-simple{RESET}          Allow auto-conversion of Simple FEL in Auto-Yes mode.
           {BOLD}--delete{RESET}                  Auto-delete backups after successful conversion.
 
@@ -1125,6 +1223,9 @@ class DoviConvertApp:
         
         # Temp files to cleanup
         self.temp_files: List[Path] = []
+
+        # Last failure reason (for compact batch mode error tracking)
+        self.last_fail_reason: str = ""
         
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._handle_signal)
@@ -1725,25 +1826,30 @@ class DoviConvertApp:
             if self.convert_legacy(filepath, conv_hevc) != 0:
                 if self.abort_requested:
                     return 130
+                self.last_fail_reason = "Safe mode extraction failed"
                 print(f"{RED}Safe Mode Failed.{RESET}")
                 return 1
             return 0
         else:
             turbo_res, fail_reason = self.convert_turbo(filepath, conv_hevc)
-            
+
             if turbo_res == 0:
                 return 0
             elif turbo_res == 130 or self.abort_requested:
                 return 130
             else:
                 print(f"{RED}Standard Mode Failed.{RESET}")
-                
+
                 if fail_reason == "CRITICAL":
+                    self.last_fail_reason = "Disk full or permission denied"
                     print(f"{RED}CRITICAL ERROR: Disk Full or Permission Denied.{RESET}")
                     return 1
                 elif fail_reason == "STREAM_ERROR":
+                    self.last_fail_reason = "Stream/timestamp error (likely seamless branching)"
                     print(f"{MAGENTA}Reason: Stream/Timestamp Error (Likely Seamless Branching).{RESET}")
-                
+                else:
+                    self.last_fail_reason = "Unknown conversion error"
+
                 if self.batch_running:
                     print(f"{MAGENTA}Batch Mode: Skipping file. Retry manually with -safe.{RESET}")
                     return 1
@@ -1755,11 +1861,12 @@ class DoviConvertApp:
                         reply = "n"
                     if reply == "n":
                         return 1
-                    
+
                     print("[Retry] ", end="")
                     if self.convert_legacy(filepath, conv_hevc) != 0:
                         if self.abort_requested:
                             return 130
+                        self.last_fail_reason = "Safe mode fallback also failed"
                         print(f"{RED}Safe Mode also failed.{RESET}")
                         return 1
                     return 0
@@ -1789,9 +1896,10 @@ class DoviConvertApp:
         if ret == 130 or self.abort_requested:
             return 130
         if ret != 0:
+            self.last_fail_reason = "Mux failed"
             print(f"{RED}Mux Failed.{RESET}")
             return 1
-        
+
         print(f"\r\033[K[2/3] Muxing (Cloning Metadata + {fps_orig}fps)... Done.")
         return 0
 
@@ -1818,6 +1926,7 @@ class DoviConvertApp:
                  if self.config.debug_mode:
                      self.media.log(f"Frame verification mismatch resolved: MI_Orig={frames_orig}, FF_Orig={ff_orig}, New={frames_new}")
             else:
+                self.last_fail_reason = f"Frame mismatch (expected {ff_orig}, got {frames_new})"
                 print(f"\r\033[K[3/3] Verifying... {RED}FAIL: Frame mismatch!{RESET} (Stream Verified: {ff_orig} vs {frames_new})")
                 return 1
         else:
@@ -2127,9 +2236,62 @@ class DoviConvertApp:
             files = self._find_mkv_files(max_depth, [source_dir])
             for file in files:
                 file_map[file] = source_dir
-        
+
         return file_map
-    
+
+    def _get_error_suggestion(self, reason: str) -> Optional[str]:
+        """Get suggestion based on error reason."""
+        reason_lower = reason.lower()
+        if "stream" in reason_lower or "timestamp" in reason_lower or "seamless" in reason_lower:
+            return f"Retry with {BOLD}--safe{RESET} flag"
+        if "frame mismatch" in reason_lower:
+            return f"Retry with {BOLD}--safe{RESET} flag"
+        if "disk" in reason_lower or "permission" in reason_lower:
+            return None  # User must fix manually
+        return f"Run with {BOLD}--debug{RESET} flag and check dovi_convert_debug.log"
+
+    def _print_compact_summary(self, success_list: List[str], fail_list: List[Tuple[Path, str]],
+                               elapsed: float, converted_size: int, queue_count: int = 0,
+                               aborted: bool = False) -> None:
+        """Print compact end-of-batch summary."""
+        print()
+        print("=" * 96)
+        if aborted:
+            print(f"{MAGENTA}{BOLD}BATCH ABORTED BY USER{RESET}")
+        else:
+            print(f"{BOLD}BATCH COMPLETE{RESET}")
+        print("=" * 96)
+
+        minutes = int(elapsed) // 60
+        seconds = int(elapsed) % 60
+        size_str = human_size_gb(converted_size)
+
+        print(f"Converted:     {GREEN}{len(success_list)}{RESET} files ({size_str})")
+        print(f"Failed:        {RED}{len(fail_list)}{RESET} file{'s' if len(fail_list) != 1 else ''}")
+        if aborted and queue_count > 0:
+            skipped = queue_count - len(success_list) - len(fail_list)
+            if skipped > 0:
+                print(f"Skipped:       {MAGENTA}{skipped}{RESET} file{'s' if skipped != 1 else ''} (aborted)")
+        print(f"Time elapsed:  {minutes}m {seconds:02d}s")
+        if self.config.output_dir:
+            print(f"Output:        {BLUE}{self.config.output_dir}{RESET}")
+
+        if fail_list:
+            print()
+            print("-" * 96)
+            print(f"{RED}FAILED CONVERSIONS:{RESET}")
+            print()
+            for i, (filepath, reason) in enumerate(fail_list, 1):
+                print(f"{i}. {BOLD}{filepath.name}{RESET}")
+                print(f"   Path:       {filepath.parent}/")
+                print(f"   Error:      {reason}")
+                suggestion = self._get_error_suggestion(reason)
+                if suggestion:
+                    print(f"   Suggestion: {suggestion}")
+                print()
+
+        print("=" * 96)
+
     def cmd_batch(self, max_depth: int = 1, files: List[Path] = None, source_dirs: List[Path] = None) -> None:
         """Batch processing of directory or provided file list."""
         
@@ -2265,94 +2427,191 @@ class DoviConvertApp:
                 self.batch_running = False
                 return
         
-        print()
-        print("=" * 51)
-        self.batch_running = True
-        print("BATCH PROCESSING STARTED")
-        print("=" * 51)
-        
         # Build file-to-source mapping if -o flag is used
         file_source_map: Dict[Path, Path] = {}
         if self.config.output_dir and source_dirs:
             file_source_map = self._build_batch_source_map(source_dirs, max_depth)
-        
+
         success_list: List[str] = []
-        fail_list: List[str] = []
+        fail_list: List[Tuple[Path, str]] = []  # (path, reason) tuples for error tracking
         success_simple_count = 0
         success_forced_count = 0
         success_simple_fel_count = 0
-        
-        for idx, filepath in enumerate(conversion_queue, 1):
-            if self.abort_requested:
-                break
-            
-            print("Batch:")
-            print(f"{BOLD}[{idx}/{queue_count}]{RESET} {filepath.name}")
-            print("---------------------------------------------------")
-            
-            # Re-analyze for fresh state
-            self.analyze_file(filepath)
-            
-            # Get source directory from map (None if -o not used or file not in map)
-            batch_source = file_source_map.get(filepath, None)
-            
-            res = self.cmd_convert(filepath, "auto", batch_source)
-            
-            if res == 130 or self.abort_requested:
-                break
-            elif res == 0:
-                success_list.append(filepath.name)
-                if self.scan_result and self.scan_result.verdict == "COMPLEX":
-                    success_forced_count += 1
-                else:
-                    success_simple_count += 1
-                    if "Simple" in self.dovi_status:
-                        success_simple_fel_count += 1
-            elif res == 2:
-                skipped_count += 1
-            else:
-                fail_list.append(filepath.name)
-        
-        self.batch_running = False
-        
-        print(f"\n{'=' * 51}")
-        if self.abort_requested:
-            print(f"           {MAGENTA}{BOLD}BATCH ABORTED BY USER{RESET}")
-        else:
-            print(f"           {BOLD}BATCH PROCESSING COMPLETE{RESET}")
-        print("=" * 51)
-        print("Processed:")
-        
-        if success_simple_count > 0:
-            mel_count = success_simple_count - success_simple_fel_count
-            if success_simple_fel_count > 0:
-                breakdown = f"({BLUE}{success_simple_fel_count} Simple FEL{RESET} / {GREEN}{mel_count} MEL{RESET})"
-            else:
-                breakdown = f"({GREEN}MEL / Safe{RESET})"
-            print(f"  - Converted:   {GREEN}{success_simple_count}{RESET}   {breakdown}")
-        
-        if success_forced_count > 0:
-            print(f"  - Converted:   {MAGENTA}{success_forced_count}{RESET}   (Complex FEL - Forced)")
-        
-        if len(success_list) == 0:
-            print("  - Converted:   0")
-        print(f"  - Failed:      {RED}{len(fail_list)}{RESET}")
-        print()
-        print("Not Processed:")
-        print(f"  - Ignored:     {BLUE}{ignored_count}{RESET}   (Not Profile 7)")
-        print(f"  - Complex FEL: {RED}{complex_count}{RESET}   (Unsafe / Skipped)")
-        print(f"  - Invalid:     {MAGENTA}{skipped_count}{RESET}   (Corrupt / No Track)")
-        
-        if fail_list:
-            print("---------------------------------------------------")
-            print(f"{MAGENTA}Failed Files (Likely Seamless Branching / Stream Issues):{RESET}")
-            for f in fail_list:
-                print(f" - {f}")
+
+        # Determine output mode: compact (default) or verbose (--verbose)
+        compact_mode = not self.config.verbose_mode
+
+        if compact_mode:
+            # Compact mode: table-based output
             print()
-            print(f"{BOLD}Suggestion:{RESET} Try converting these specific files using Safe Mode:")
-            print('  dovi_convert -convert "filename.mkv" -safe')
-        
-        print("=" * 51)
+            print("=" * 96)
+            self.batch_running = True
+            print(f"{BOLD}BATCH PROCESSING STARTED{RESET}")
+            print("=" * 96)
+            print()
+            print(f"Format: {GREEN}MEL{RESET} = Safe | {BLUE}sFEL{RESET} = Simple FEL | {MAGENTA}cFEL{RESET} = Complex FEL (Forced)")
+            print()
+
+            # Calculate layout dimensions
+            digit_width = len(str(queue_count))
+            prefix_width = digit_width * 2 + 4  # [N/N] + space
+            filename_width = 96 - prefix_width - 8 - 15  # table - prefix - format - progress
+
+            # Print header
+            header_filename = f"{'Filename':<{filename_width + prefix_width}}"
+            print(f"{header_filename}{'Format':<8}Progress")
+            print("-" * 96)
+
+            # Directory header tracking
+            unique_dirs = len(set(f.parent for f in conversion_queue))
+            show_dir_headers = unique_dirs > 1
+            current_directory: Optional[Path] = None
+
+            batch_start_time = time.time()
+            converted_size = 0
+
+            for idx, filepath in enumerate(conversion_queue, 1):
+                if self.abort_requested:
+                    break
+
+                # Directory header
+                if show_dir_headers and filepath.parent != current_directory:
+                    if current_directory is not None:
+                        print()
+                    print(f"{BOLD}DIRECTORY: {filepath.parent}{RESET}")
+                    current_directory = filepath.parent
+
+                # Format columns
+                prefix = f"[{idx:>{digit_width}}/{queue_count}]"
+                name = truncate_middle(filepath.name, filename_width - 4)  # -4 for spacing before format column
+                kind = file_kind.get(filepath, "mel")
+                fmt_map = {"mel": f"{GREEN}MEL{RESET}", "simple_fel": f"{BLUE}sFEL{RESET}",
+                           "forced": f"{MAGENTA}cFEL{RESET}"}
+                fmt_str = fmt_map.get(kind, "???")
+
+                # Start spinner
+                spinner = CompactBatchSpinner(prefix, name, fmt_str, filename_width)
+                spinner.start()
+
+                # Re-analyze and convert with suppressed output
+                self.analyze_file(filepath)
+                self.last_fail_reason = ""
+                batch_source = file_source_map.get(filepath, None)
+
+                with suppress_output():
+                    res = self.cmd_convert(filepath, "auto", batch_source)
+
+                # Finish row
+                if res == 130 or self.abort_requested:
+                    spinner.stop(False)
+                    break
+                elif res == 0:
+                    spinner.stop(True)
+                    success_list.append(filepath.name)
+                    converted_size += get_file_size(filepath)
+                    if self.scan_result and self.scan_result.verdict == "COMPLEX":
+                        success_forced_count += 1
+                    else:
+                        success_simple_count += 1
+                        if "Simple" in self.dovi_status:
+                            success_simple_fel_count += 1
+                elif res == 2:
+                    spinner.stop(False)
+                    skipped_count += 1
+                else:
+                    spinner.stop(False)
+                    fail_list.append((filepath, self.last_fail_reason or "Unknown error"))
+
+            self.batch_running = False
+
+            # Print compact summary (always show, even on abort)
+            elapsed = time.time() - batch_start_time
+            self._print_compact_summary(success_list, fail_list, elapsed, converted_size,
+                                        queue_count=queue_count, aborted=self.abort_requested)
+
+        else:
+            # Verbose mode: original detailed output
+            print()
+            print("=" * 51)
+            self.batch_running = True
+            print("BATCH PROCESSING STARTED")
+            print("=" * 51)
+
+            for idx, filepath in enumerate(conversion_queue, 1):
+                if self.abort_requested:
+                    break
+
+                print("Batch:")
+                print(f"{BOLD}[{idx}/{queue_count}]{RESET} {filepath.name}")
+                print("---------------------------------------------------")
+
+                # Re-analyze for fresh state
+                self.analyze_file(filepath)
+                self.last_fail_reason = ""
+
+                # Get source directory from map (None if -o not used or file not in map)
+                batch_source = file_source_map.get(filepath, None)
+
+                res = self.cmd_convert(filepath, "auto", batch_source)
+
+                if res == 130 or self.abort_requested:
+                    break
+                elif res == 0:
+                    success_list.append(filepath.name)
+                    if self.scan_result and self.scan_result.verdict == "COMPLEX":
+                        success_forced_count += 1
+                    else:
+                        success_simple_count += 1
+                        if "Simple" in self.dovi_status:
+                            success_simple_fel_count += 1
+                elif res == 2:
+                    skipped_count += 1
+                else:
+                    fail_list.append((filepath, self.last_fail_reason or "Unknown error"))
+
+            self.batch_running = False
+
+            print(f"\n{'=' * 51}")
+            if self.abort_requested:
+                print(f"           {MAGENTA}{BOLD}BATCH ABORTED BY USER{RESET}")
+            else:
+                print(f"           {BOLD}BATCH PROCESSING COMPLETE{RESET}")
+            print("=" * 51)
+            print("Processed:")
+
+            if success_simple_count > 0:
+                mel_count_success = success_simple_count - success_simple_fel_count
+                if success_simple_fel_count > 0:
+                    breakdown = f"({BLUE}{success_simple_fel_count} Simple FEL{RESET} / {GREEN}{mel_count_success} MEL{RESET})"
+                else:
+                    breakdown = f"({GREEN}MEL / Safe{RESET})"
+                print(f"  - Converted:   {GREEN}{success_simple_count}{RESET}   {breakdown}")
+
+            if success_forced_count > 0:
+                print(f"  - Converted:   {MAGENTA}{success_forced_count}{RESET}   (Complex FEL - Forced)")
+
+            if len(success_list) == 0:
+                print("  - Converted:   0")
+            print(f"  - Failed:      {RED}{len(fail_list)}{RESET}")
+            print()
+            print("Not Processed:")
+            print(f"  - Ignored:     {BLUE}{ignored_count}{RESET}   (Not Profile 7)")
+            print(f"  - Complex FEL: {RED}{complex_count}{RESET}   (Unsafe / Skipped)")
+            print(f"  - Invalid:     {MAGENTA}{skipped_count}{RESET}   (Corrupt / No Track)")
+
+            if fail_list:
+                print("---------------------------------------------------")
+                print(f"{MAGENTA}Failed Files:{RESET}")
+                for filepath, reason in fail_list:
+                    print(f" - {filepath.name}")
+                    print(f"   Error: {reason}")
+                    suggestion = self._get_error_suggestion(reason)
+                    if suggestion:
+                        print(f"   Suggestion: {suggestion}")
+                print()
+
+            print("=" * 51)
+
         send_notification("dovi_convert", "Batch Complete.")
     
     def cmd_cleanup(self, recursive: bool = False) -> None:
@@ -2850,9 +3109,10 @@ def dispatch_command(app: 'DoviConvertApp', parsed: ParsedArgs) -> int:
     app.config.delete_backup = parsed.delete_backup
     app.config.hdr10_mode = parsed.hdr10
     app.config.candidates_only = parsed.candidates_only
+    app.config.verbose_mode = parsed.verbose
     app.config.temp_dir = parsed.temp_dir
     app.config.output_dir = parsed.output_dir
-    
+
     # Validate temp/output dirs if specified
     if parsed.temp_dir:
         if not parsed.temp_dir.exists():
