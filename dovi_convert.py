@@ -47,7 +47,7 @@ from typing import Any, Dict, List, Optional, Tuple
 # CONSTANTS
 # =============================================================================
 
-VERSION = "8.0.0"
+VERSION = "8.1.0"
 REPO_URL = "https://api.github.com/repos/cryptochrome/dovi_convert/releases/latest"
 
 # ANSI formatting (always enabled)
