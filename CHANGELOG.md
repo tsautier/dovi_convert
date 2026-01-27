@@ -7,12 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [v8.1.0] - 2026-01-27
 
 ### Added
 - **Compact Batch Output Mode:** `convert` batch mode now displays a clean, table-based progress view by default.
     - Use `--verbose` / `-v` flag to see the previous detailed per-file output.
-- **No-Color-Mode** dovi_convert now respects the NO_COLOR environment variable and disables CLI colors when set.
+- **No-Color-Mode:** dovi_convert now respects the NO_COLOR environment variable and disables CLI colors when set.
 - **Session Persistence in Docker:** added tmux to the container for persistent sessions. For more information, read the [Docker guide](https://docs.doviconvert.com/installation/docker).
 
 ### Changed

@@ -18,7 +18,7 @@ Most streaming devices (Apple TV, Shield, Amazon Fire*, etc.) don't support Prof
 **Major Breaking Changes:** 
 
 - Complete rewrite of the CLI interface (argument parsing and syntax).
-- Merged `batch`and `convert` into a new, unified `convert` command that now handles both single file and batch conversions of entire directories.
+- Merged `batch`and `convert` into a new, unified `convert` command. It now handles both single file and batch conversions of entire directories.
 
 Make sure to read the [Changelog](CHANGELOG.md) for full details.
 
