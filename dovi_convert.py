@@ -1256,16 +1256,6 @@ class DoviConvertApp:
             except Exception:
                 pass
         self.temp_files.clear()
-        
-        # Clean up probe/inspect temp files
-        cwd = Path.cwd()
-        for pattern in ["probe_*.hevc", "probe_*.rpu", "probe_*.json",
-                        "inspect_*.hevc", "inspect_*.rpu", "inspect_*.json"]:
-            for f in cwd.glob(pattern):
-                try:
-                    f.unlink()
-                except Exception:
-                    pass
 
     def check_fel_complexity(self, filepath: Path) -> ScanResult:
         """Analyze RPU to detect Complex FEL."""
