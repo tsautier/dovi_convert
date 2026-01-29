@@ -785,7 +785,7 @@ class MediaToolWrapper:
             with open(self.debug_log, "a") as f:
                 f.write(f"[{timestamp}] {msg}\n")
     
-    def run_logged(self, cmd: List[str], capture: bool = False) -> Tuple[int, str, str]:
+    def run_logged(self, cmd: List[str], capture: bool = False, cwd: Optional[Path] = None) -> Tuple[int, str, str]:
         """Run command with logging. Returns (returncode, stdout, stderr)."""
         if self.debug_mode:
             self.log(f"--- Command: {' '.join(cmd)} ---")
@@ -794,7 +794,8 @@ class MediaToolWrapper:
             result = subprocess.run(
                 cmd,
                 capture_output=True,
-                text=True
+                text=True,
+                cwd=cwd
             )
             
             if self.debug_mode and result.stdout:
@@ -1350,11 +1351,12 @@ class DoviConvertApp:
                 self._cleanup_probe_files([temp_rpu, temp_json])
                 continue
             
-            # Export to JSON
+            # Export to JSON (use cwd + relative paths to avoid comma parsing issues)
             try:
                 subprocess.run(
-                    ["dovi_tool", "export", "-i", str(temp_rpu), "-d", f"all={temp_json}"],
-                    capture_output=True
+                    ["dovi_tool", "export", "-i", temp_rpu.name, "-d", f"all={temp_json.name}"],
+                    capture_output=True,
+                    cwd=filepath.parent
                 )
             except Exception as e:
                 if self.config.debug_mode:
@@ -2693,9 +2695,11 @@ class DoviConvertApp:
                 )
                 
                 if pf_rpu.exists() and pf_rpu.stat().st_size > 0:
+                    # Use cwd + relative paths to avoid comma parsing issues
                     subprocess.run(
-                        ["dovi_tool", "export", "-i", str(pf_rpu), "-d", f"all={pf_json}"],
-                        capture_output=True
+                        ["dovi_tool", "export", "-i", pf_rpu.name, "-d", f"all={pf_json.name}"],
+                        capture_output=True,
+                        cwd=filepath.parent
                     )
                     
                     if pf_json.exists() and pf_json.stat().st_size > 0:
@@ -2958,8 +2962,10 @@ class DoviConvertApp:
         spinner = Spinner("Exporting Metadata... ")
         spinner.start()
         
+        # Use cwd + relative paths to avoid comma parsing issues
         ret, _, _ = self.media.run_logged(
-            ["dovi_tool", "export", "-i", str(temp_rpu), "-d", f"all={temp_json}"]
+            ["dovi_tool", "export", "-i", temp_rpu.name, "-d", f"all={temp_json.name}"],
+            cwd=filepath.parent
         )
         
         spinner.stop()
