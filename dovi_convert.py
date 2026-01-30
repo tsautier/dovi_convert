@@ -206,12 +206,17 @@ class ConversionMetrics:
 class BatchStats:
     """Statistics for batch processing."""
     success_list: List[str] = field(default_factory=list)
-    fail_list: List[str] = field(default_factory=list)
+    fail_list: List[Tuple[Path, str]] = field(default_factory=list)  # (path, error_reason)
     ignored_count: int = 0
     skipped_count: int = 0
     complex_count: int = 0
-    simple_count: int = 0
-    forced_count: int = 0
+    success_simple_count: int = 0
+    success_forced_count: int = 0
+    success_simple_fel_count: int = 0
+    converted_size: int = 0
+    elapsed: float = 0.0
+    queue_count: int = 0
+    aborted: bool = False
 
 
 # =============================================================================
@@ -2289,38 +2294,36 @@ class DoviConvertApp:
             return None  # User must fix manually
         return f"Run with {BOLD}--debug{RESET} flag and check dovi_convert_debug.log"
 
-    def _print_compact_summary(self, success_list: List[str], fail_list: List[Tuple[Path, str]],
-                               elapsed: float, converted_size: int, queue_count: int = 0,
-                               aborted: bool = False) -> None:
+    def _print_compact_summary(self, stats: BatchStats) -> None:
         """Print compact end-of-batch summary."""
         print()
         print("=" * 96)
-        if aborted:
+        if stats.aborted:
             print(f"{MAGENTA}{BOLD}BATCH ABORTED BY USER{RESET}")
         else:
             print(f"{BOLD}BATCH COMPLETE{RESET}")
         print("=" * 96)
 
-        minutes = int(elapsed) // 60
-        seconds = int(elapsed) % 60
-        size_str = human_size_gb(converted_size)
+        minutes = int(stats.elapsed) // 60
+        seconds = int(stats.elapsed) % 60
+        size_str = human_size_gb(stats.converted_size)
 
-        print(f"Converted:     {GREEN}{len(success_list)}{RESET} files ({size_str})")
-        print(f"Failed:        {RED}{len(fail_list)}{RESET} file{'s' if len(fail_list) != 1 else ''}")
-        if aborted and queue_count > 0:
-            skipped = queue_count - len(success_list) - len(fail_list)
+        print(f"Converted:     {GREEN}{len(stats.success_list)}{RESET} files ({size_str})")
+        print(f"Failed:        {RED}{len(stats.fail_list)}{RESET} file{'s' if len(stats.fail_list) != 1 else ''}")
+        if stats.aborted and stats.queue_count > 0:
+            skipped = stats.queue_count - len(stats.success_list) - len(stats.fail_list)
             if skipped > 0:
                 print(f"Skipped:       {MAGENTA}{skipped}{RESET} file{'s' if skipped != 1 else ''} (aborted)")
         print(f"Time elapsed:  {minutes}m {seconds:02d}s")
         if self.config.output_dir:
             print(f"Output:        {BLUE}{self.config.output_dir}{RESET}")
 
-        if fail_list:
+        if stats.fail_list:
             print()
             print("-" * 96)
             print(f"{RED}FAILED CONVERSIONS:{RESET}")
             print()
-            for i, (filepath, reason) in enumerate(fail_list, 1):
+            for i, (filepath, reason) in enumerate(stats.fail_list, 1):
                 print(f"{i}. {BOLD}{filepath.name}{RESET}")
                 print(f"   Path:       {filepath.parent}/")
                 print(f"   Error:      {reason}")
@@ -2331,15 +2334,63 @@ class DoviConvertApp:
 
         print("=" * 96)
 
+    def _print_verbose_summary(self, stats: BatchStats) -> None:
+        """Print verbose end-of-batch summary."""
+        print(f"\n{'=' * 51}")
+        if stats.aborted:
+            print(f"           {MAGENTA}{BOLD}BATCH ABORTED BY USER{RESET}")
+        else:
+            print(f"           {BOLD}BATCH PROCESSING COMPLETE{RESET}")
+        print("=" * 51)
+        print("Processed:")
+
+        if stats.success_simple_count > 0:
+            mel_count = stats.success_simple_count - stats.success_simple_fel_count
+            if stats.success_simple_fel_count > 0:
+                breakdown = f"({BLUE}{stats.success_simple_fel_count} Simple FEL{RESET} / {GREEN}{mel_count} MEL{RESET})"
+            else:
+                breakdown = f"({GREEN}MEL / Safe{RESET})"
+            print(f"  - Converted:   {GREEN}{stats.success_simple_count}{RESET}   {breakdown}")
+
+        if stats.success_forced_count > 0:
+            print(f"  - Converted:   {MAGENTA}{stats.success_forced_count}{RESET}   (Complex FEL - Forced)")
+
+        if len(stats.success_list) == 0:
+            print("  - Converted:   0")
+        print(f"  - Failed:      {RED}{len(stats.fail_list)}{RESET}")
+
+        if stats.aborted and stats.queue_count > 0:
+            skipped = stats.queue_count - len(stats.success_list) - len(stats.fail_list)
+            if skipped > 0:
+                print(f"  - Skipped:     {MAGENTA}{skipped}{RESET}   (aborted)")
+
+        print()
+        print("Not Processed:")
+        print(f"  - Ignored:     {BLUE}{stats.ignored_count}{RESET}   (Not Profile 7)")
+        print(f"  - Complex FEL: {RED}{stats.complex_count}{RESET}   (Unsafe / Skipped)")
+        print(f"  - Invalid:     {MAGENTA}{stats.skipped_count}{RESET}   (Corrupt / No Track)")
+
+        if stats.fail_list:
+            print("---------------------------------------------------")
+            print(f"{MAGENTA}Failed Files:{RESET}")
+            for filepath, reason in stats.fail_list:
+                print(f" - {filepath.name}")
+                print(f"   Error: {reason}")
+                suggestion = self._get_error_suggestion(reason)
+                if suggestion:
+                    print(f"   Suggestion: {suggestion}")
+            print()
+
+        print("=" * 51)
+
     def cmd_batch(self, max_depth: int = 1, files: List[Path] = None, source_dirs: List[Path] = None) -> None:
         """Batch processing of directory or provided file list."""
-        
+
         conversion_queue: List[Path] = []
         file_kind: Dict[Path, str] = {}  # Track classification: "mel", "simple_fel", "forced"
-        
-        ignored_count = 0
-        skipped_count = 0
-        complex_count = 0
+
+        # Use BatchStats to track all statistics in one place
+        stats = BatchStats()
         total_batch_size = 0
         
         if files:
@@ -2368,14 +2419,14 @@ class DoviConvertApp:
                 total_batch_size += get_file_size(mkv_file)
                 
             elif self.action == "IGNORE":
-                ignored_count += 1
+                stats.ignored_count += 1
             elif self.scan_result and self.scan_result.verdict == "COMPLEX":
-                complex_count += 1
+                stats.complex_count += 1
             else:
-                skipped_count += 1
-        
-        if len(conversion_queue) == 0 and complex_count == 0:
-            print(f"No Profile 7 files found (Ignored: {ignored_count}).")
+                stats.skipped_count += 1
+
+        if len(conversion_queue) == 0 and stats.complex_count == 0:
+            print(f"No Profile 7 files found (Ignored: {stats.ignored_count}).")
             self.batch_running = False
             return
         
@@ -2416,8 +2467,8 @@ class DoviConvertApp:
         # Early exit if nothing to convert
         if queue_count == 0:
             print(f"\n{MAGENTA}No files eligible for conversion.{RESET}")
-            if complex_count > 0 or ignored_count > 0 or skipped_count > 0:
-                print(f"  Ignored: {ignored_count} (Not P7), Complex FEL: {complex_count} (Unsafe), Skipped: {skipped_count} (Invalid)")
+            if stats.complex_count > 0 or stats.ignored_count > 0 or stats.skipped_count > 0:
+                print(f"  Ignored: {stats.ignored_count} (Not P7), Complex FEL: {stats.complex_count} (Unsafe), Skipped: {stats.skipped_count} (Invalid)")
             if simple_fel_excluded:
                 print(f"  Simple FEL: {simple_fel_count} (Excluded)")
             self.batch_running = False
@@ -2437,8 +2488,8 @@ class DoviConvertApp:
             print(f"  Skip:           {MAGENTA}{simple_fel_count}{RESET}   (Simple FEL - Excluded)")
         if forced_count > 0:
             print(f"  Convert:        {MAGENTA}{forced_count}{RESET}   (Complex FEL - Forced)")
-        if complex_count > 0:
-            print(f"  Skip:           {RED}{complex_count}{RESET}   (Complex FEL)")
+        if stats.complex_count > 0:
+            print(f"  Skip:           {RED}{stats.complex_count}{RESET}   (Complex FEL)")
         print(f"  Queue Size:     {BLUE}{total_size_gb}{RESET} ({queue_count} file(s))")
         
         # Proceed with conversion
@@ -2471,11 +2522,8 @@ class DoviConvertApp:
         if self.config.output_dir and source_dirs:
             file_source_map = self._build_batch_source_map(source_dirs, max_depth)
 
-        success_list: List[str] = []
-        fail_list: List[Tuple[Path, str]] = []  # (path, reason) tuples for error tracking
-        success_simple_count = 0
-        success_forced_count = 0
-        success_simple_fel_count = 0
+        # Store queue count for summary calculations
+        stats.queue_count = queue_count
 
         # Determine output mode: compact (default) or verbose (--verbose)
         compact_mode = not self.config.verbose_mode
@@ -2507,7 +2555,6 @@ class DoviConvertApp:
             current_directory: Optional[Path] = None
 
             batch_start_time = time.time()
-            converted_size = 0
 
             for idx, filepath in enumerate(conversion_queue, 1):
                 if self.abort_requested:
@@ -2546,27 +2593,27 @@ class DoviConvertApp:
                     break
                 elif res == 0:
                     spinner.stop(True)
-                    success_list.append(filepath.name)
-                    converted_size += get_file_size(filepath)
+                    stats.success_list.append(filepath.name)
+                    stats.converted_size += get_file_size(filepath)
                     if self.scan_result and self.scan_result.verdict == "COMPLEX":
-                        success_forced_count += 1
+                        stats.success_forced_count += 1
                     else:
-                        success_simple_count += 1
+                        stats.success_simple_count += 1
                         if "Simple" in self.dovi_status:
-                            success_simple_fel_count += 1
+                            stats.success_simple_fel_count += 1
                 elif res == 2:
                     spinner.stop(False)
-                    skipped_count += 1
+                    stats.skipped_count += 1
                 else:
                     spinner.stop(False)
-                    fail_list.append((filepath, self.last_fail_reason or "Unknown error"))
+                    stats.fail_list.append((filepath, self.last_fail_reason or "Unknown error"))
 
             self.batch_running = False
 
             # Print compact summary (always show, even on abort)
-            elapsed = time.time() - batch_start_time
-            self._print_compact_summary(success_list, fail_list, elapsed, converted_size,
-                                        queue_count=queue_count, aborted=self.abort_requested)
+            stats.elapsed = time.time() - batch_start_time
+            stats.aborted = self.abort_requested
+            self._print_compact_summary(stats)
 
         else:
             # Verbose mode: original detailed output
@@ -2596,60 +2643,22 @@ class DoviConvertApp:
                 if res == 130 or self.abort_requested:
                     break
                 elif res == 0:
-                    success_list.append(filepath.name)
+                    stats.success_list.append(filepath.name)
                     if self.scan_result and self.scan_result.verdict == "COMPLEX":
-                        success_forced_count += 1
+                        stats.success_forced_count += 1
                     else:
-                        success_simple_count += 1
+                        stats.success_simple_count += 1
                         if "Simple" in self.dovi_status:
-                            success_simple_fel_count += 1
+                            stats.success_simple_fel_count += 1
                 elif res == 2:
-                    skipped_count += 1
+                    stats.skipped_count += 1
                 else:
-                    fail_list.append((filepath, self.last_fail_reason or "Unknown error"))
+                    stats.fail_list.append((filepath, self.last_fail_reason or "Unknown error"))
 
             self.batch_running = False
 
-            print(f"\n{'=' * 51}")
-            if self.abort_requested:
-                print(f"           {MAGENTA}{BOLD}BATCH ABORTED BY USER{RESET}")
-            else:
-                print(f"           {BOLD}BATCH PROCESSING COMPLETE{RESET}")
-            print("=" * 51)
-            print("Processed:")
-
-            if success_simple_count > 0:
-                mel_count_success = success_simple_count - success_simple_fel_count
-                if success_simple_fel_count > 0:
-                    breakdown = f"({BLUE}{success_simple_fel_count} Simple FEL{RESET} / {GREEN}{mel_count_success} MEL{RESET})"
-                else:
-                    breakdown = f"({GREEN}MEL / Safe{RESET})"
-                print(f"  - Converted:   {GREEN}{success_simple_count}{RESET}   {breakdown}")
-
-            if success_forced_count > 0:
-                print(f"  - Converted:   {MAGENTA}{success_forced_count}{RESET}   (Complex FEL - Forced)")
-
-            if len(success_list) == 0:
-                print("  - Converted:   0")
-            print(f"  - Failed:      {RED}{len(fail_list)}{RESET}")
-            print()
-            print("Not Processed:")
-            print(f"  - Ignored:     {BLUE}{ignored_count}{RESET}   (Not Profile 7)")
-            print(f"  - Complex FEL: {RED}{complex_count}{RESET}   (Unsafe / Skipped)")
-            print(f"  - Invalid:     {MAGENTA}{skipped_count}{RESET}   (Corrupt / No Track)")
-
-            if fail_list:
-                print("---------------------------------------------------")
-                print(f"{MAGENTA}Failed Files:{RESET}")
-                for filepath, reason in fail_list:
-                    print(f" - {filepath.name}")
-                    print(f"   Error: {reason}")
-                    suggestion = self._get_error_suggestion(reason)
-                    if suggestion:
-                        print(f"   Suggestion: {suggestion}")
-                print()
-
-            print("=" * 51)
+            stats.aborted = self.abort_requested
+            self._print_verbose_summary(stats)
 
         send_notification("dovi_convert", "Batch Complete.")
     
