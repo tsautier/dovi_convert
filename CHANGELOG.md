@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v8.1.1] - 2026-01-30
+
+This is a maintenance release with some bug fixes and code improvements
+
+### Changed
+- Removed unused code in the cleanup function.
+- Refactored stats collection and batch summaries
+- Streamlined batch pre-flight and summary UI
+
+### Fixed
+- Fixed `scan` and `inspect` failing on files in folders containing commas (e.g., "Movie, The (2025)"). (Fixes #36) 
+- Fixed an issue where `CTRL-C` wasn't handled properly during batch conversions
+
 ## [v8.1.0] - 2026-01-27
 
 ### Added
