@@ -2336,50 +2336,54 @@ class DoviConvertApp:
 
     def _print_verbose_summary(self, stats: BatchStats) -> None:
         """Print verbose end-of-batch summary."""
-        print(f"\n{'=' * 51}")
-        if stats.aborted:
-            print(f"           {MAGENTA}{BOLD}BATCH ABORTED BY USER{RESET}")
-        else:
-            print(f"           {BOLD}BATCH PROCESSING COMPLETE{RESET}")
+        print()
         print("=" * 51)
-        print("Processed:")
+        if stats.aborted:
+            print(f"{MAGENTA}{BOLD}BATCH ABORTED BY USER{RESET}")
+        else:
+            print(f"{BOLD}BATCH COMPLETE{RESET}")
+        print("=" * 51)
 
-        if stats.success_simple_count > 0:
-            mel_count = stats.success_simple_count - stats.success_simple_fel_count
-            if stats.success_simple_fel_count > 0:
-                breakdown = f"({BLUE}{stats.success_simple_fel_count} Simple FEL{RESET} / {GREEN}{mel_count} MEL{RESET})"
-            else:
-                breakdown = f"({GREEN}MEL / Safe{RESET})"
-            print(f"  - Converted:   {GREEN}{stats.success_simple_count}{RESET}   {breakdown}")
+        # Build converted line with breakdown
+        if stats.success_simple_count > 0 or stats.success_forced_count > 0:
+            total_converted = len(stats.success_list)
+            parts = []
+            if stats.success_simple_count > 0:
+                mel_count = stats.success_simple_count - stats.success_simple_fel_count
+                if stats.success_simple_fel_count > 0 and mel_count > 0:
+                    parts.append(f"{stats.success_simple_fel_count} Simple FEL")
+                    parts.append(f"{mel_count} MEL")
+                elif stats.success_simple_fel_count > 0:
+                    parts.append(f"{stats.success_simple_fel_count} Simple FEL")
+                else:
+                    parts.append(f"{stats.success_simple_count} MEL")
+            if stats.success_forced_count > 0:
+                parts.append(f"{stats.success_forced_count} Complex FEL")
+            breakdown = f" ({', '.join(parts)})" if parts else ""
+            print(f"Converted:     {GREEN}{total_converted}{RESET} files{breakdown}")
+        else:
+            print(f"Converted:     {GREEN}0{RESET} files")
 
-        if stats.success_forced_count > 0:
-            print(f"  - Converted:   {MAGENTA}{stats.success_forced_count}{RESET}   (Complex FEL - Forced)")
-
-        if len(stats.success_list) == 0:
-            print("  - Converted:   0")
-        print(f"  - Failed:      {RED}{len(stats.fail_list)}{RESET}")
+        print(f"Failed:        {RED}{len(stats.fail_list)}{RESET} file{'s' if len(stats.fail_list) != 1 else ''}")
 
         if stats.aborted and stats.queue_count > 0:
             skipped = stats.queue_count - len(stats.success_list) - len(stats.fail_list)
             if skipped > 0:
-                print(f"  - Skipped:     {MAGENTA}{skipped}{RESET}   (aborted)")
-
-        print()
-        print("Not Processed:")
-        print(f"  - Ignored:     {BLUE}{stats.ignored_count}{RESET}   (Not Profile 7)")
-        print(f"  - Complex FEL: {RED}{stats.complex_count}{RESET}   (Unsafe / Skipped)")
-        print(f"  - Invalid:     {MAGENTA}{stats.skipped_count}{RESET}   (Corrupt / No Track)")
+                print(f"Skipped:       {MAGENTA}{skipped}{RESET} file{'s' if skipped != 1 else ''} (aborted)")
 
         if stats.fail_list:
-            print("---------------------------------------------------")
-            print(f"{MAGENTA}Failed Files:{RESET}")
-            for filepath, reason in stats.fail_list:
-                print(f" - {filepath.name}")
-                print(f"   Error: {reason}")
+            print()
+            print("-" * 51)
+            print(f"{RED}FAILED CONVERSIONS:{RESET}")
+            print()
+            for i, (filepath, reason) in enumerate(stats.fail_list, 1):
+                print(f"{i}. {BOLD}{filepath.name}{RESET}")
+                print(f"   Path:       {filepath.parent}/")
+                print(f"   Error:      {reason}")
                 suggestion = self._get_error_suggestion(reason)
                 if suggestion:
                     print(f"   Suggestion: {suggestion}")
-            print()
+                print()
 
         print("=" * 51)
 
@@ -2491,7 +2495,16 @@ class DoviConvertApp:
         if stats.complex_count > 0:
             print(f"  Skip:           {RED}{stats.complex_count}{RESET}   (Complex FEL)")
         print(f"  Queue Size:     {BLUE}{total_size_gb}{RESET} ({queue_count} file(s))")
-        
+
+        # Show note about ignored/invalid files if any
+        if stats.ignored_count > 0 or stats.skipped_count > 0:
+            parts = []
+            if stats.ignored_count > 0:
+                parts.append(f"{stats.ignored_count} ignored (not Profile 7)")
+            if stats.skipped_count > 0:
+                parts.append(f"{stats.skipped_count} invalid")
+            print(f"  Note:           {', '.join(parts)}")
+
         # Proceed with conversion
         if self.config.auto_yes:
             print(f"\n{MAGENTA}Auto-Yes (-y) active. Starting conversion immediately...{RESET}")
