@@ -1228,6 +1228,12 @@ class DoviConvertApp:
         # Temp files to cleanup
         self.temp_files: List[Path] = []
 
+        # Active subprocesses for clean abort
+        self.active_procs: List[subprocess.Popen] = []
+
+        # Active spinner for clean abort
+        self.active_spinner: Optional[Spinner] = None
+
         # Last failure reason (for compact batch mode error tracking)
         self.last_fail_reason: str = ""
         
@@ -1238,13 +1244,33 @@ class DoviConvertApp:
     def _handle_signal(self, signum: int, frame) -> None:
         """Handle interrupt signals."""
         self.abort_requested = True
+        # Stop active spinner first to prevent output after our messages
+        if self.active_spinner:
+            self.active_spinner.stop()
+            self.active_spinner = None
+        # Terminate active subprocesses to unblock communicate()
+        for proc in self.active_procs:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+        for proc in self.active_procs:
+            try:
+                proc.wait(timeout=2)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+        self.active_procs.clear()
         self._cleanup()
         sys.stdout.write("\033[?25h")  # Ensure cursor visible
+        # In batch mode, return to let the batch loop print its summary
+        if self.batch_running:
+            return
         print(f"\n{MAGENTA}[!] Process Interrupted by User.{RESET}")
         print(f"{MAGENTA}[!] Cleaning up temporary files... Done.{RESET}")
-        if self.batch_running:
-            print(f"{GREEN}[✓] Original Source file is safe and untouched.{RESET}")
-            return
+        print(f"{GREEN}[✓] Original Source file is safe and untouched.{RESET}")
         sys.exit(130)
     
     def _cleanup(self) -> None:
@@ -1592,6 +1618,7 @@ class DoviConvertApp:
     def convert_turbo(self, input_file: Path, output_file: Path) -> Tuple[int, str]:
         """Standard conversion using pipe mode. Returns (status, error_type)."""
         spinner = Spinner("[1/3] Converting... ")
+        self.active_spinner = spinner
         spinner.start()
         
         ffmpeg_stderr = b""
@@ -1605,34 +1632,41 @@ class DoviConvertApp:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
-            
+            self.active_procs.append(ffmpeg_proc)
+
             # Choose dovi_tool command based on mode
             if self.config.hdr10_mode:
                 dovi_cmd = ["dovi_tool", "remove", "-", "-o", str(output_file)]
             else:
                 dovi_cmd = ["dovi_tool", "-m", "2", "convert", "--discard", "-", "-o", str(output_file)]
-            
+
             dovi_proc = subprocess.Popen(
                 dovi_cmd,
                 stdin=ffmpeg_proc.stdout,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
-            
+            self.active_procs.append(dovi_proc)
+
             # Allow ffmpeg_proc to receive SIGPIPE
             ffmpeg_proc.stdout.close()
-            
+
             _, dovi_stderr = dovi_proc.communicate()
             _, ffmpeg_stderr = ffmpeg_proc.communicate()
-            
+
             ffmpeg_status = ffmpeg_proc.returncode
             dovi_status = dovi_proc.returncode
-            
+
         except Exception as e:
+            self.active_procs.clear()
             spinner.stop()
+            self.active_spinner = None
             return (1, "UNKNOWN")
-        
+
+        self.active_procs.clear()
+
         spinner.stop()
+        self.active_spinner = None
         
         # Check BOTH return codes - critical for catching hidden pipe errors
         if ffmpeg_status != 0:
@@ -1686,32 +1720,36 @@ class DoviConvertApp:
         
         # Extraction step
         spinner = Spinner("[1/3] Extracting... ")
+        self.active_spinner = spinner
         spinner.start()
-        
+
         ret, _, _ = self.media.run_logged(
             ["mkvextract", str(input_file), "tracks", f"{self.video_info.track_id}:{raw_temp}"]
         )
         spinner.stop()
-        
+        self.active_spinner = None
+
         if ret == 130 or self.abort_requested:
             return 130
         if ret != 0:
             return 1
-        
+
         print(f"\r\033[K[1/3] Extracting... Done.")
-        
+
         # Conversion step
         spinner = Spinner("[1/3] Converting... ")
+        self.active_spinner = spinner
         spinner.start()
-        
+
         # Choose dovi_tool command based on mode
         if self.config.hdr10_mode:
             dovi_cmd = ["dovi_tool", "remove", str(raw_temp), "-o", str(output_file)]
         else:
             dovi_cmd = ["dovi_tool", "-m", "2", "convert", "--discard", str(raw_temp), "-o", str(output_file)]
-        
+
         ret, _, _ = self.media.run_logged(dovi_cmd)
         spinner.stop()
+        self.active_spinner = None
         
         raw_temp.unlink(missing_ok=True)
         
@@ -1883,11 +1921,13 @@ class DoviConvertApp:
         mux_args.extend(["--no-video", str(filepath)])
         
         spinner = Spinner(f"[2/3] Muxing (Cloning Metadata + {fps_orig}fps)... ")
+        self.active_spinner = spinner
         spinner.start()
-        
+
         ret, _, _ = self.media.run_logged(["mkvmerge"] + mux_args)
         spinner.stop()
-        
+        self.active_spinner = None
+
         if ret == 130 or self.abort_requested:
             return 130
         if ret != 0:
@@ -1902,11 +1942,13 @@ class DoviConvertApp:
         """Verify, swap and print metrics. Returns 0=success, 1=fail."""
         # Step 4: Verification
         spinner = Spinner("[3/3] Verifying... ")
+        self.active_spinner = spinner
         spinner.start()
-        
+
         frames_orig = self.media.get_frame_count(filepath)
         frames_new = self.media.get_frame_count(temp_mkv)
         spinner.stop()
+        self.active_spinner = None
         
         if frames_orig and frames_orig != frames_new:
             # DVY-33: Smart Verification Fallback
@@ -1939,9 +1981,11 @@ class DoviConvertApp:
         else:
             # With -o: move to destination and rename .tmp to .mkv
             spinner = Spinner("Moving to output directory... ")
+            self.active_spinner = spinner
             spinner.start()
             shutil.move(str(temp_mkv), str(final_output_path))
             spinner.stop()
+            self.active_spinner = None
             print(f"\r\033[KMoving to output directory... Done.")
             print(f"Output saved to: {BLUE}{final_output_path}{RESET}")
         
@@ -2738,21 +2782,25 @@ class DoviConvertApp:
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE
                     )
-                    
+                    self.active_procs.append(ffmpeg_proc)
+
                     dovi_proc = subprocess.Popen(
                         ["dovi_tool", "extract-rpu", "-", "-o", str(temp_rpu)],
                         stdin=ffmpeg_proc.stdout,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE
                     )
-                    
+                    self.active_procs.append(dovi_proc)
+
                     ffmpeg_proc.stdout.close()
                     _, dovi_stderr = dovi_proc.communicate()
                     _, ffmpeg_stderr = ffmpeg_proc.communicate()
-                    
+
+                    self.active_procs.clear()
+
                     ffmpeg_status = ffmpeg_proc.returncode
                     dovi_status = dovi_proc.returncode
-                    
+
                     if ffmpeg_status != 0:
                         status = 1
                         if self.config.debug_mode:
@@ -2760,6 +2808,7 @@ class DoviConvertApp:
                     else:
                         status = dovi_status
                 except Exception:
+                    self.active_procs.clear()
                     status = 1
                 
                 spinner.stop()
