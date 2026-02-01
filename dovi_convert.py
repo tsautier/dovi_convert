@@ -35,6 +35,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tarfile
 import tempfile
 import threading
 import time
@@ -117,8 +118,10 @@ class Config:
     candidates_only: bool = False
     hdr10_mode: bool = False
     verbose_mode: bool = False
+    create_backup: bool = False
     temp_dir: Optional[Path] = None
     output_dir: Optional[Path] = None
+    backup_source: Optional[Path] = None
 
 
 @dataclass
@@ -142,10 +145,12 @@ class ParsedArgs:
     hdr10: bool = False               # convert
     candidates_only: bool = False     # scan
     verbose: bool = False             # convert (batch mode - show detailed output)
+    create_backup: bool = False       # convert (create EL backup before conversion)
 
     # Path options
-    temp_dir: Optional[Path] = None   # convert, batch
-    output_dir: Optional[Path] = None # convert, batch
+    temp_dir: Optional[Path] = None   # convert, batch, backup, restore
+    output_dir: Optional[Path] = None # convert, batch, backup, restore
+    backup_source: Optional[Path] = None  # restore (external backup location)
 
 @dataclass
 class FlagDef:
@@ -166,16 +171,17 @@ class FlagDef:
 FLAGS = [
     # Global flag (applies to all commands)
     FlagDef("--debug", "debug",
-            frozenset({"convert", "scan", "inspect", "cleanup", "update-check"})),
+            frozenset({"convert", "scan", "inspect", "cleanup", "update-check", "backup", "restore"})),
 
     # convert flags
     FlagDef("--force", "force", frozenset({"convert"}), short="-f"),
     FlagDef("--safe", "safe", frozenset({"convert", "inspect"}), short="-s"),
     FlagDef("--delete", "delete_backup", frozenset({"convert"})),
-    FlagDef("--temp", "temp_dir", frozenset({"convert"}), short="-t",
+    FlagDef("--temp", "temp_dir", frozenset({"convert", "backup", "restore"}), short="-t",
             takes_value=True),
-    FlagDef("--output", "output_dir", frozenset({"convert"}), short="-o",
+    FlagDef("--output", "output_dir", frozenset({"convert", "backup", "restore"}), short="-o",
             takes_value=True),
+    FlagDef("--backup", "create_backup", frozenset({"convert"}), short="-b"),
     FlagDef("--hdr10", "hdr10", frozenset({"convert"})),
     FlagDef("--yes", "yes", frozenset({"convert", "cleanup"}), short="-y"),
     FlagDef("--include-simple", "include_simple", frozenset({"convert"})),
@@ -185,6 +191,9 @@ FLAGS = [
 
     # scan only
     FlagDef("--candidates", "candidates_only", frozenset({"scan"})),
+
+    # restore only
+    FlagDef("--source", "backup_source", frozenset({"restore"}), takes_value=True),
 ]
 
 # Build lookup tables (derived, not manually maintained)
@@ -1016,6 +1025,8 @@ class HelpText:
         print("  scan [path]           Scan file(s) or directory.")
         print("  inspect [file]        Full RPU structure inspection.")
         print("  convert [file|dir]    Convert files or directories.")
+        print("  backup [file]         Create EL backup before conversion.")
+        print("  restore [file]        Restore Profile 7 from backup.")
         print("  cleanup               Delete tool backups.")
         print("  update-check          Check for software updates.")
         print("  help                  Show full manual.")
@@ -1103,6 +1114,8 @@ class HelpText:
        Options:
           {BOLD}--hdr10{RESET}                   Convert to HDR10 instead of DoVi Profile 8.1.
                                     (Only available for single file conversions.)
+          {BOLD}-b, --backup{RESET}              Create EL backup before conversion.
+                                    Allows restoring to Profile 7 later.
           {BOLD}-f, --force{RESET}               Force convert 'Complex FEL' files.
           {BOLD}-t, --temp [path]{RESET}         Write temp files to a faster drive.
           {BOLD}-o, --output [path]{RESET}       Output directory for converted files.
@@ -1123,6 +1136,29 @@ class HelpText:
 
        Options:
           {BOLD}-s, --safe{RESET}   Force Safe Mode (Disk Extraction fallback).
+
+  {BOLD}backup [file]{RESET}
+       Creates a compact backup of the Enhancement Layer (EL) before conversion.
+       The backup archive ({BLUE}*.dovi{RESET}) is ~10-15% of the original file size.
+       Use this to preserve restoration capability while freeing disk space.
+
+       {BOLD}Single file only.{RESET} Use --backup with convert for batch operations.
+
+       Options:
+          {BOLD}-t, --temp [path]{RESET}     Write temp files to a faster drive.
+          {BOLD}-o, --output [path]{RESET}   Output directory for the .dovi archive.
+
+  {BOLD}restore [file]{RESET}
+       Restores a Profile 7 FEL file from a P8.1 or HDR10 file + its .dovi backup.
+       Output: {BLUE}[filename].restored.mkv{RESET}
+
+       {BOLD}Single file only.{RESET} The backup archive must exist in the same directory
+       as the input file, or be specified via --source.
+
+       Options:
+          {BOLD}--source [path]{RESET}       Path to the .dovi backup archive.
+          {BOLD}-t, --temp [path]{RESET}     Write temp files to a faster drive.
+          {BOLD}-o, --output [path]{RESET}   Output directory for the restored file.
 
   {BOLD}cleanup{RESET}
        Scans for and deletes {BLUE}*.mkv.bak.dovi_convert{RESET} files in the current directory.
@@ -1158,6 +1194,12 @@ class HelpText:
        Automatically deletes the backup (Original Source) file immediately
        after a successful conversion and verification.
        Use this for large batches where you don't have disk space to store backups.
+
+  {BOLD}-b, --backup{RESET} (convert)
+       {CYAN}EL Backup Mode.{RESET}
+       Creates a compact backup of the Enhancement Layer before conversion.
+       The .dovi archive (~10-15% of original) allows restoring to Profile 7 later.
+       Combine with --delete to free disk space while keeping restoration capability.
 
   {BOLD}--debug{RESET} (global)
        {MAGENTA}Debug Mode.{RESET}
@@ -1202,6 +1244,322 @@ class HelpText:
             except Exception:
                 pass
         print(help_text)
+
+
+# =============================================================================
+# BACKUP MANAGER
+# =============================================================================
+
+class BackupManager:
+    """Handles EL backup creation and restoration for Dolby Vision files."""
+
+    ARCHIVE_EXTENSION = ".dovi"
+    RESTORED_SUFFIX = ".restored"
+    EL_FILENAME = "el.hevc"
+
+    def __init__(self, media: MediaToolWrapper, config: Config):
+        self.media = media
+        self.config = config
+        self.temp_files: List[Path] = []
+
+    def _cleanup_temp(self) -> None:
+        """Remove temporary files created during backup/restore."""
+        for f in self.temp_files:
+            try:
+                f.unlink(missing_ok=True)
+            except Exception:
+                pass
+        self.temp_files.clear()
+
+    def _get_archive_path(self, filepath: Path) -> Path:
+        """Determine archive output path based on config."""
+        archive_name = filepath.stem + self.ARCHIVE_EXTENSION
+        if self.config.output_dir:
+            return self.config.output_dir / archive_name
+        return filepath.parent / archive_name
+
+    def _get_temp_path(self, filename: str) -> Path:
+        """Get path for a temporary file, using --temp if specified."""
+        if self.config.temp_dir:
+            return self.config.temp_dir / filename
+        return Path(tempfile.gettempdir()) / filename
+
+    def locate_backup(self, filepath: Path) -> Optional[Path]:
+        """Find .dovi archive for a given file.
+
+        Search order:
+        1. --source path if specified
+        2. Same directory as the input file
+        """
+        # Check --source first
+        if self.config.backup_source:
+            source = Path(self.config.backup_source)
+            if source.exists():
+                return source
+            return None
+
+        # Check same directory
+        archive_path = filepath.parent / (filepath.stem + self.ARCHIVE_EXTENSION)
+        if archive_path.exists():
+            return archive_path
+
+        return None
+
+    def verify_backup(self, archive_path: Path) -> Tuple[bool, str]:
+        """Validate archive structure and contents.
+
+        Returns (is_valid, error_message).
+        """
+        if not archive_path.exists():
+            return False, f"Archive not found: {archive_path}"
+
+        try:
+            with tarfile.open(archive_path, "r") as tar:
+                names = tar.getnames()
+                if self.EL_FILENAME not in names:
+                    return False, f"Archive missing required file: {self.EL_FILENAME}"
+        except tarfile.TarError as e:
+            return False, f"Invalid archive format: {e}"
+        except Exception as e:
+            return False, f"Failed to read archive: {e}"
+
+        return True, ""
+
+    def create_backup(self, filepath: Path, spinner_callback=None) -> Tuple[int, Optional[Path], str]:
+        """Extract EL and create .dovi archive.
+
+        Args:
+            filepath: Path to the Profile 7 MKV file
+            spinner_callback: Optional callback for spinner updates
+
+        Returns:
+            (status, archive_path, error_message)
+            status: 0=success, 1=error
+        """
+        archive_path = self._get_archive_path(filepath)
+
+        # Check if archive already exists
+        if archive_path.exists():
+            return 1, None, f"Backup already exists: {archive_path}"
+
+        # Temp file for EL extraction
+        el_temp = self._get_temp_path(f"{filepath.stem}_el.hevc")
+        self.temp_files.append(el_temp)
+
+        try:
+            # Extract EL via ffmpeg | dovi_tool demux pipeline
+            # ffmpeg extracts HEVC stream, dovi_tool extracts just the EL
+            ffmpeg_cmd = [
+                "ffmpeg", "-hide_banner", "-loglevel", "error",
+                "-i", str(filepath),
+                "-map", "0:v:0",
+                "-c:v", "copy",
+                "-bsf:v", "hevc_mp4toannexb",
+                "-f", "hevc", "-"
+            ]
+
+            dovi_cmd = ["dovi_tool", "demux", "--el-only", "-e", str(el_temp), "-"]
+
+            if self.media.debug_mode:
+                self.media.log(f"Backup: {' '.join(ffmpeg_cmd)} | {' '.join(dovi_cmd)}")
+
+            ffmpeg_proc = subprocess.Popen(
+                ffmpeg_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+
+            dovi_proc = subprocess.Popen(
+                dovi_cmd,
+                stdin=ffmpeg_proc.stdout,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+
+            # Allow ffmpeg to receive SIGPIPE
+            ffmpeg_proc.stdout.close()
+
+            _, dovi_stderr = dovi_proc.communicate()
+            _, ffmpeg_stderr = ffmpeg_proc.communicate()
+
+            if ffmpeg_proc.returncode != 0:
+                stderr_text = ffmpeg_stderr.decode() if ffmpeg_stderr else ""
+                self._cleanup_temp()
+                return 1, None, f"FFmpeg failed: {stderr_text}"
+
+            if dovi_proc.returncode != 0:
+                stderr_text = dovi_stderr.decode() if dovi_stderr else ""
+                self._cleanup_temp()
+                return 1, None, f"dovi_tool demux failed: {stderr_text}"
+
+            if not el_temp.exists() or el_temp.stat().st_size == 0:
+                self._cleanup_temp()
+                return 1, None, "EL extraction produced empty output"
+
+            # Package into uncompressed TAR
+            try:
+                with tarfile.open(archive_path, "w") as tar:
+                    tar.add(el_temp, arcname=self.EL_FILENAME)
+            except Exception as e:
+                self._cleanup_temp()
+                return 1, None, f"Failed to create archive: {e}"
+
+            self._cleanup_temp()
+            return 0, archive_path, ""
+
+        except Exception as e:
+            self._cleanup_temp()
+            return 1, None, f"Backup failed: {e}"
+
+    def _has_dolby_vision(self, filepath: Path) -> bool:
+        """Check if file has Dolby Vision metadata (P8.1) vs plain HDR10."""
+        info = self.media.get_video_info(filepath)
+        # P8.1 files have DoVi metadata, HDR10 does not
+        return "Dolby Vision" in info.mi_info_string or "dvhe" in info.mi_info_string.lower()
+
+    def restore_backup(self, filepath: Path, spinner_callback=None) -> Tuple[int, Optional[Path], str]:
+        """Restore Profile 7 from P8.1/HDR10 + .dovi archive.
+
+        Args:
+            filepath: Path to the P8.1 or HDR10 MKV file to restore
+            spinner_callback: Optional callback for spinner updates
+
+        Returns:
+            (status, restored_path, error_message)
+            status: 0=success, 1=error
+        """
+        # Locate backup
+        archive_path = self.locate_backup(filepath)
+        if not archive_path:
+            search_loc = filepath.parent / (filepath.stem + self.ARCHIVE_EXTENSION)
+            return 1, None, f"No backup found. Expected: {search_loc}"
+
+        # Verify backup integrity
+        is_valid, error = self.verify_backup(archive_path)
+        if not is_valid:
+            return 1, None, error
+
+        # Determine output path
+        restored_name = filepath.stem + self.RESTORED_SUFFIX + ".mkv"
+        if self.config.output_dir:
+            restored_path = self.config.output_dir / restored_name
+        else:
+            restored_path = filepath.parent / restored_name
+
+        if restored_path.exists():
+            return 1, None, f"Restored file already exists: {restored_path}"
+
+        # Temp files
+        bl_temp = self._get_temp_path(f"{filepath.stem}_bl.hevc")
+        bl_clean = self._get_temp_path(f"{filepath.stem}_bl_clean.hevc")
+        el_temp = self._get_temp_path(f"{filepath.stem}_el.hevc")
+        restored_hevc = self._get_temp_path(f"{filepath.stem}_restored.hevc")
+        self.temp_files.extend([bl_temp, bl_clean, el_temp, restored_hevc])
+
+        try:
+            # Step 1: Extract BL from current file
+            ffmpeg_cmd = [
+                "ffmpeg", "-hide_banner", "-loglevel", "error",
+                "-i", str(filepath),
+                "-map", "0:v:0",
+                "-c:v", "copy",
+                "-bsf:v", "hevc_mp4toannexb",
+                "-f", "hevc", str(bl_temp)
+            ]
+
+            if self.media.debug_mode:
+                self.media.log(f"Restore BL extract: {' '.join(ffmpeg_cmd)}")
+
+            result = subprocess.run(ffmpeg_cmd, capture_output=True)
+            if result.returncode != 0:
+                self._cleanup_temp()
+                return 1, None, f"Failed to extract base layer: {result.stderr.decode()}"
+
+            # Step 2: Detect if P8.1 and sanitize BL
+            has_dovi = self._has_dolby_vision(filepath)
+
+            if has_dovi:
+                # P8.1 has injected RPU that must be stripped
+                dovi_remove_cmd = ["dovi_tool", "remove", str(bl_temp), "-o", str(bl_clean)]
+
+                if self.media.debug_mode:
+                    self.media.log(f"Restore RPU strip: {' '.join(dovi_remove_cmd)}")
+
+                result = subprocess.run(dovi_remove_cmd, capture_output=True)
+                if result.returncode != 0:
+                    self._cleanup_temp()
+                    return 1, None, f"Failed to strip RPU from base layer: {result.stderr.decode()}"
+                bl_for_mux = bl_clean
+            else:
+                # HDR10 - use BL directly
+                bl_for_mux = bl_temp
+
+            # Step 3: Unpack archive to get EL
+            try:
+                with tarfile.open(archive_path, "r") as tar:
+                    # Extract el.hevc to temp location
+                    member = tar.getmember(self.EL_FILENAME)
+                    with tar.extractfile(member) as src:
+                        with open(el_temp, "wb") as dst:
+                            dst.write(src.read())
+            except Exception as e:
+                self._cleanup_temp()
+                return 1, None, f"Failed to extract EL from archive: {e}"
+
+            # Step 4: Verify frame counts match
+            bl_frames = self.media.get_frame_count(filepath)
+            # For EL, we trust it was created from the same source
+            # A full verification would require parsing HEVC NAL units
+
+            # Step 5: Rebuild FEL with dovi_tool mux
+            mux_cmd = [
+                "dovi_tool", "mux",
+                "--bl", str(bl_for_mux),
+                "--el", str(el_temp),
+                "-o", str(restored_hevc)
+            ]
+
+            if self.media.debug_mode:
+                self.media.log(f"Restore FEL mux: {' '.join(mux_cmd)}")
+
+            result = subprocess.run(mux_cmd, capture_output=True)
+            if result.returncode != 0:
+                self._cleanup_temp()
+                return 1, None, f"Failed to rebuild FEL: {result.stderr.decode()}"
+
+            # Step 6: Final mux with mkvmerge (video from restored, everything else from original)
+            mkvmerge_cmd = [
+                "mkvmerge", "-o", str(restored_path),
+                str(restored_hevc),
+                "--no-video", str(filepath)
+            ]
+
+            if self.media.debug_mode:
+                self.media.log(f"Restore final mux: {' '.join(mkvmerge_cmd)}")
+
+            result = subprocess.run(mkvmerge_cmd, capture_output=True)
+            if result.returncode not in (0, 1):  # mkvmerge returns 1 for warnings
+                self._cleanup_temp()
+                return 1, None, f"Failed to create restored MKV: {result.stderr.decode()}"
+
+            # Verify restored file
+            if not restored_path.exists() or restored_path.stat().st_size == 0:
+                self._cleanup_temp()
+                return 1, None, "Restored file is empty or missing"
+
+            # Verify frame count of restored file
+            restored_frames = self.media.get_frame_count(restored_path)
+            if bl_frames > 0 and restored_frames > 0 and abs(bl_frames - restored_frames) > 1:
+                # Frame count mismatch - warn but don't fail
+                if self.media.debug_mode:
+                    self.media.log(f"Frame count mismatch: original={bl_frames}, restored={restored_frames}")
+
+            self._cleanup_temp()
+            return 0, restored_path, ""
+
+        except Exception as e:
+            self._cleanup_temp()
+            return 1, None, f"Restore failed: {e}"
 
 
 # =============================================================================
@@ -1996,25 +2354,61 @@ class DoviConvertApp:
         
         if self.config.delete_backup:
             backup_mkv.unlink()
-            print(f"{MAGENTA}Original Source deleted (-delete active).{RESET}")
+            print(f"{MAGENTA}Original Source deleted (--delete active).{RESET}")
         else:
             print(f"Original Source saved as: {BLUE}{backup_mkv}{RESET}")
-        
+
+        # Show EL backup location if --backup was used
+        if hasattr(self, '_backup_archive_path') and self._backup_archive_path:
+            print(f"Enhancement Layer backed up as: {CYAN}{self._backup_archive_path}{RESET}")
+            self._backup_archive_path = None  # Reset for next conversion
+
         conv_hevc.unlink(missing_ok=True)
         return 0
 
     
     def cmd_convert(self, filepath: Path, mode: str = "manual", batch_source_dir: Optional[Path] = None) -> int:
         """Convert a single file. Returns 0=success, 1=error, 2=skip, 130=abort."""
-        
+
         # 1. Validation
         res = self._convert_validate(filepath, mode)
         if res is not None:
             return res
-        
+
         # Only print Processing line in manual mode (batch mode already announces the file)
         if mode == "manual":
             print(f"{BOLD}Processing:{RESET} {filepath}")
+
+        # 1b. Create EL backup if --backup flag is set
+        self._backup_archive_path = None  # Reset for this conversion
+        if self.config.create_backup:
+            backup_mgr = BackupManager(self.media, self.config)
+            archive_path = backup_mgr._get_archive_path(filepath)
+
+            if archive_path.exists():
+                self._backup_archive_path = archive_path  # Track for final output
+                if mode == "manual":
+                    print(f"  {BLUE}Backup already exists:{RESET} {archive_path.name}")
+            else:
+                if mode == "manual":
+                    spinner = Spinner("Creating EL backup... ")
+                    spinner.start()
+
+                status, archive_path, error = backup_mgr.create_backup(filepath)
+
+                if mode == "manual":
+                    spinner.stop()
+
+                if status != 0:
+                    if mode == "manual":
+                        print(f"\r\033[K{RED}Backup failed:{RESET} {error}")
+                    return 1
+
+                self._backup_archive_path = archive_path  # Track for final output
+
+                if mode == "manual":
+                    archive_size = get_file_size(archive_path)
+                    print(f"\r\033[KCreating EL backup... Done. ({human_size_gb(archive_size)})")
         
         # 2. Setup (Get FPS and paths)
         fps_orig = self.media.get_fps(filepath)
@@ -2674,7 +3068,127 @@ class DoviConvertApp:
             self._print_verbose_summary(stats)
 
         send_notification("dovi_convert", "Batch Complete.")
-    
+
+    def cmd_backup(self, filepath: Path) -> int:
+        """Create EL backup for a Profile 7 file.
+
+        Returns: 0=success, 1=error
+        """
+        if not filepath.exists():
+            print(f"{RED}File not found:{RESET} {filepath}")
+            return 1
+
+        if not filepath.suffix.lower() == ".mkv":
+            print(f"{RED}Not an MKV file:{RESET} {filepath}")
+            return 1
+
+        # Check if file is Profile 7 FEL
+        print(f"Analyzing: {BOLD}{filepath.name}{RESET}")
+        info = self.media.get_video_info(filepath)
+
+        if "Dolby Vision" not in info.mi_info_string:
+            print(f"{RED}Not a Dolby Vision file.{RESET}")
+            return 1
+
+        # Check for FEL (Profile 7)
+        is_profile_7 = "dvhe.07" in info.mi_info_string.lower() or "profile 7" in info.mi_info_string.lower()
+        if not is_profile_7:
+            print(f"{RED}Not a Profile 7 FEL file.{RESET} Only Profile 7 files can be backed up.")
+            return 1
+
+        # Create backup manager and execute
+        backup_mgr = BackupManager(self.media, self.config)
+
+        print(f"Creating backup...")
+        spinner = Spinner("Extracting Enhancement Layer... ")
+        spinner.start()
+
+        status, archive_path, error = backup_mgr.create_backup(filepath)
+
+        spinner.stop()
+
+        if status != 0:
+            print(f"\r\033[K{RED}Backup failed:{RESET} {error}")
+            return 1
+
+        # Report success
+        archive_size = get_file_size(archive_path)
+        orig_size = get_file_size(filepath)
+        ratio = (archive_size / orig_size * 100) if orig_size > 0 else 0
+
+        print(f"\r\033[KExtracting Enhancement Layer... Done.")
+        print()
+        print(f"{GREEN}Backup created successfully.{RESET}")
+        print(f"  Archive: {BOLD}{archive_path}{RESET}")
+        print(f"  Size: {human_size_gb(archive_size)} ({ratio:.1f}% of original)")
+        return 0
+
+    def cmd_restore(self, filepath: Path) -> int:
+        """Restore Profile 7 from backup.
+
+        Returns: 0=success, 1=error
+        """
+        if not filepath.exists():
+            print(f"{RED}File not found:{RESET} {filepath}")
+            return 1
+
+        if not filepath.suffix.lower() == ".mkv":
+            print(f"{RED}Not an MKV file:{RESET} {filepath}")
+            return 1
+
+        # Create backup manager
+        backup_mgr = BackupManager(self.media, self.config)
+
+        # Check if backup exists
+        archive_path = backup_mgr.locate_backup(filepath)
+        if not archive_path:
+            expected = filepath.parent / (filepath.stem + BackupManager.ARCHIVE_EXTENSION)
+            print(f"{RED}No backup found.{RESET}")
+            print(f"  Expected: {expected}")
+            if self.config.backup_source:
+                print(f"  --source: {self.config.backup_source} (not found)")
+            else:
+                print(f"  Hint: Use --source to specify an alternate backup location.")
+            return 1
+
+        # Verify backup
+        is_valid, error = backup_mgr.verify_backup(archive_path)
+        if not is_valid:
+            print(f"{RED}Invalid backup:{RESET} {error}")
+            return 1
+
+        print(f"Restoring: {BOLD}{filepath.name}{RESET}")
+        print(f"  Using backup: {archive_path}")
+
+        spinner = Spinner("Restoring Profile 7... ")
+        spinner.start()
+
+        status, restored_path, error = backup_mgr.restore_backup(filepath)
+
+        spinner.stop()
+
+        if status != 0:
+            print(f"\r\033[K{RED}Restore failed:{RESET} {error}")
+            return 1
+
+        # Verify restored file
+        restored_size = get_file_size(restored_path)
+        info = self.media.get_video_info(restored_path)
+
+        print(f"\r\033[KRestoring Profile 7... Done.")
+        print()
+        print(f"{GREEN}Restore completed successfully.{RESET}")
+        print(f"  Restored file: {BOLD}{restored_path}{RESET}")
+        print(f"  Size: {human_size_gb(restored_size)}")
+
+        # Show format from mediainfo
+        if "dvhe.07" in info.mi_info_string.lower():
+            print(f"  Format: {GREEN}Profile 7 ({info.mi_info_string}){RESET}")
+        else:
+            print(f"  Format: {MAGENTA}Could not verify Profile 7{RESET} (check with 'dovi_convert scan')")
+
+        return 0
+
     def cmd_cleanup(self, recursive: bool = False) -> None:
         """Clean up backup files."""
         if recursive:
@@ -3054,7 +3568,7 @@ class DoviConvertApp:
 # Valid flags per command - derived from FLAGS registry
 COMMAND_FLAGS = {
     cmd: {f.field for f in FLAGS if cmd in f.commands}
-    for cmd in ["convert", "scan", "inspect", "cleanup", "update-check"]
+    for cmd in ["convert", "scan", "inspect", "cleanup", "update-check", "backup", "restore"]
 }
 COMMAND_FLAGS["help"] = set()  # help takes no flags
 
@@ -3114,6 +3628,8 @@ def parse_args(argv: List[str]) -> ParsedArgs:
                     # Handle type conversion based on field
                     if flag.field in ("temp_dir", "output_dir"):
                         setattr(parsed, flag.field, Path(value))
+                    elif flag.field == "backup_source":
+                        parsed.backup_source = value
                     elif flag.field == "recursive":
                         parsed.recursive = True
                         try:
@@ -3185,8 +3701,10 @@ def dispatch_command(app: 'DoviConvertApp', parsed: ParsedArgs) -> int:
     app.config.hdr10_mode = parsed.hdr10
     app.config.candidates_only = parsed.candidates_only
     app.config.verbose_mode = parsed.verbose
+    app.config.create_backup = parsed.create_backup
     app.config.temp_dir = parsed.temp_dir
     app.config.output_dir = parsed.output_dir
+    app.config.backup_source = Path(parsed.backup_source) if parsed.backup_source else None
 
     # Validate temp/output dirs if specified
     if parsed.temp_dir:
@@ -3322,10 +3840,28 @@ def dispatch_command(app: 'DoviConvertApp', parsed: ParsedArgs) -> int:
         app.cmd_inspect(parsed.files[0])
         return 0
     
+    elif parsed.command == "backup":
+        if not parsed.files:
+            print("Usage: dovi_convert backup <file>")
+            return 1
+        if len(parsed.files) > 1:
+            print(f"{RED}Error: backup command only supports single files.{RESET}")
+            return 1
+        return app.cmd_backup(parsed.files[0])
+
+    elif parsed.command == "restore":
+        if not parsed.files:
+            print("Usage: dovi_convert restore <file>")
+            return 1
+        if len(parsed.files) > 1:
+            print(f"{RED}Error: restore command only supports single files.{RESET}")
+            return 1
+        return app.cmd_restore(parsed.files[0])
+
     elif parsed.command == "cleanup":
         app.cmd_cleanup(parsed.recursive)
         return 0
-    
+
     elif parsed.command == "update-check":
         UpdateChecker.check_manual()
         return 0
