@@ -1257,9 +1257,10 @@ class BackupManager:
     RESTORED_SUFFIX = ".restored"
     EL_FILENAME = "el.hevc"
 
-    def __init__(self, media: MediaToolWrapper, config: Config):
-        self.media = media
-        self.config = config
+    def __init__(self, app: 'DoviConvertApp'):
+        self.app = app
+        self.media = app.media
+        self.config = app.config
         self.temp_files: List[Path] = []
 
     def _cleanup_temp(self) -> None:
@@ -1368,6 +1369,7 @@ class BackupManager:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
+            self.app.active_procs.append(ffmpeg_proc)
 
             dovi_proc = subprocess.Popen(
                 dovi_cmd,
@@ -1375,12 +1377,20 @@ class BackupManager:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE
             )
+            self.app.active_procs.append(dovi_proc)
 
             # Allow ffmpeg to receive SIGPIPE
             ffmpeg_proc.stdout.close()
 
             _, dovi_stderr = dovi_proc.communicate()
             _, ffmpeg_stderr = ffmpeg_proc.communicate()
+
+            self.app.active_procs.clear()
+
+            # Check for user abort
+            if ffmpeg_proc.returncode == -2 or dovi_proc.returncode == 130 or self.app.abort_requested:
+                self._cleanup_temp()
+                return 130, None, "Aborted"
 
             if ffmpeg_proc.returncode != 0:
                 stderr_text = ffmpeg_stderr.decode() if ffmpeg_stderr else ""
@@ -1475,6 +1485,10 @@ class BackupManager:
                 self._cleanup_temp()
                 return 1, None, f"Failed to extract base layer: {result.stderr.decode()}"
 
+            if self.app.abort_requested:
+                self._cleanup_temp()
+                return 130, None, "Aborted"
+
             # Step 2: Detect if P8.1 and sanitize BL
             has_dovi = self._has_dolby_vision(filepath)
 
@@ -1493,6 +1507,10 @@ class BackupManager:
             else:
                 # HDR10 - use BL directly
                 bl_for_mux = bl_temp
+
+            if self.app.abort_requested:
+                self._cleanup_temp()
+                return 130, None, "Aborted"
 
             # Step 3: Unpack archive to get EL
             try:
@@ -1526,6 +1544,10 @@ class BackupManager:
             if result.returncode != 0:
                 self._cleanup_temp()
                 return 1, None, f"Failed to rebuild FEL: {result.stderr.decode()}"
+
+            if self.app.abort_requested:
+                self._cleanup_temp()
+                return 130, None, "Aborted"
 
             # Step 6: Final mux with mkvmerge (video from restored, everything else from original)
             mkvmerge_cmd = [
@@ -2141,14 +2163,12 @@ class DoviConvertApp:
                 print(f"{RED}Error: Complex FEL detected (not safe to convert. Use -force to override).{RESET}")
                 return 1
         
-        # Simple FEL Advisory
-        if "FEL (Simple)" in self.dovi_status:
+        # Simple FEL Advisory (skip in batch mode - already handled in pre-flight)
+        if "FEL (Simple)" in self.dovi_status and mode == "manual":
             if self.config.include_simple:
                 print(f"{BLUE}[i] Simple-FEL: Explicitly included (--include-simple).{RESET}")
             elif self.config.auto_yes:
                 # Safety first: --yes without --include-simple skips Simple FEL
-                if mode == "auto":
-                    return 2
                 print(f"{MAGENTA}[!] Simple FEL detected. Skipping (--yes without --include-simple).{RESET}")
                 return 1
             else:
@@ -2382,31 +2402,34 @@ class DoviConvertApp:
         # 1b. Create EL backup if --backup flag is set
         self._backup_archive_path = None  # Reset for this conversion
         if self.config.create_backup:
-            backup_mgr = BackupManager(self.media, self.config)
+            backup_mgr = BackupManager(self)
             archive_path = backup_mgr._get_archive_path(filepath)
 
             if archive_path.exists():
                 self._backup_archive_path = archive_path  # Track for final output
-                if mode == "manual":
+                if mode == "manual" or self.config.verbose_mode:
                     print(f"  {BLUE}Backup already exists:{RESET} {archive_path.name}")
             else:
-                if mode == "manual":
+                if mode == "manual" or self.config.verbose_mode:
                     spinner = Spinner("Creating EL backup... ")
                     spinner.start()
 
                 status, archive_path, error = backup_mgr.create_backup(filepath)
 
-                if mode == "manual":
+                if mode == "manual" or self.config.verbose_mode:
                     spinner.stop()
 
+                if status == 130:
+                    return 130  # User abort
+
                 if status != 0:
-                    if mode == "manual":
+                    if mode == "manual" or self.config.verbose_mode:
                         print(f"\r\033[K{RED}Backup failed:{RESET} {error}")
                     return 1
 
                 self._backup_archive_path = archive_path  # Track for final output
 
-                if mode == "manual":
+                if mode == "manual" or self.config.verbose_mode:
                     archive_size = get_file_size(archive_path)
                     print(f"\r\033[KCreating EL backup... Done. ({human_size_gb(archive_size)})")
         
@@ -3097,7 +3120,7 @@ class DoviConvertApp:
             return 1
 
         # Create backup manager and execute
-        backup_mgr = BackupManager(self.media, self.config)
+        backup_mgr = BackupManager(self)
 
         print(f"Creating backup...")
         spinner = Spinner("Extracting Enhancement Layer... ")
@@ -3137,7 +3160,7 @@ class DoviConvertApp:
             return 1
 
         # Create backup manager
-        backup_mgr = BackupManager(self.media, self.config)
+        backup_mgr = BackupManager(self)
 
         # Check if backup exists
         archive_path = backup_mgr.locate_backup(filepath)
