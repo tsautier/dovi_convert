@@ -1480,14 +1480,19 @@ class BackupManager:
             if self.media.debug_mode:
                 self.media.log(f"Restore BL extract: {' '.join(ffmpeg_cmd)}")
 
-            result = subprocess.run(ffmpeg_cmd, capture_output=True)
-            if result.returncode != 0:
-                self._cleanup_temp()
-                return 1, None, f"Failed to extract base layer: {result.stderr.decode()}"
+            proc = subprocess.Popen(ffmpeg_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self.app.active_procs.append(proc)
+            _, stderr = proc.communicate()
+            if proc in self.app.active_procs:
+                self.app.active_procs.remove(proc)
 
             if self.app.abort_requested:
                 self._cleanup_temp()
                 return 130, None, "Aborted"
+
+            if proc.returncode != 0:
+                self._cleanup_temp()
+                return 1, None, f"Failed to extract base layer: {stderr.decode()}"
 
             # Step 2: Detect if P8.1 and sanitize BL
             has_dovi = self._has_dolby_vision(filepath)
@@ -1499,18 +1504,23 @@ class BackupManager:
                 if self.media.debug_mode:
                     self.media.log(f"Restore RPU strip: {' '.join(dovi_remove_cmd)}")
 
-                result = subprocess.run(dovi_remove_cmd, capture_output=True)
-                if result.returncode != 0:
+                proc = subprocess.Popen(dovi_remove_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                self.app.active_procs.append(proc)
+                _, stderr = proc.communicate()
+                if proc in self.app.active_procs:
+                    self.app.active_procs.remove(proc)
+
+                if self.app.abort_requested:
                     self._cleanup_temp()
-                    return 1, None, f"Failed to strip RPU from base layer: {result.stderr.decode()}"
+                    return 130, None, "Aborted"
+
+                if proc.returncode != 0:
+                    self._cleanup_temp()
+                    return 1, None, f"Failed to strip RPU from base layer: {stderr.decode()}"
                 bl_for_mux = bl_clean
             else:
                 # HDR10 - use BL directly
                 bl_for_mux = bl_temp
-
-            if self.app.abort_requested:
-                self._cleanup_temp()
-                return 130, None, "Aborted"
 
             # Step 3: Unpack archive to get EL
             try:
@@ -1540,14 +1550,19 @@ class BackupManager:
             if self.media.debug_mode:
                 self.media.log(f"Restore FEL mux: {' '.join(mux_cmd)}")
 
-            result = subprocess.run(mux_cmd, capture_output=True)
-            if result.returncode != 0:
-                self._cleanup_temp()
-                return 1, None, f"Failed to rebuild FEL: {result.stderr.decode()}"
+            proc = subprocess.Popen(mux_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self.app.active_procs.append(proc)
+            _, stderr = proc.communicate()
+            if proc in self.app.active_procs:
+                self.app.active_procs.remove(proc)
 
             if self.app.abort_requested:
                 self._cleanup_temp()
                 return 130, None, "Aborted"
+
+            if proc.returncode != 0:
+                self._cleanup_temp()
+                return 1, None, f"Failed to rebuild FEL: {stderr.decode()}"
 
             # Step 6: Final mux with mkvmerge (video from restored, everything else from original)
             mkvmerge_cmd = [
@@ -1559,10 +1574,19 @@ class BackupManager:
             if self.media.debug_mode:
                 self.media.log(f"Restore final mux: {' '.join(mkvmerge_cmd)}")
 
-            result = subprocess.run(mkvmerge_cmd, capture_output=True)
-            if result.returncode not in (0, 1):  # mkvmerge returns 1 for warnings
+            proc = subprocess.Popen(mkvmerge_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self.app.active_procs.append(proc)
+            _, stderr = proc.communicate()
+            if proc in self.app.active_procs:
+                self.app.active_procs.remove(proc)
+
+            if self.app.abort_requested:
                 self._cleanup_temp()
-                return 1, None, f"Failed to create restored MKV: {result.stderr.decode()}"
+                return 130, None, "Aborted"
+
+            if proc.returncode not in (0, 1):  # mkvmerge returns 1 for warnings
+                self._cleanup_temp()
+                return 1, None, f"Failed to create restored MKV: {stderr.decode()}"
 
             # Verify restored file
             if not restored_path.exists() or restored_path.stat().st_size == 0:
