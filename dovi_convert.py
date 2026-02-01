@@ -1621,7 +1621,10 @@ class DoviConvertApp:
 
         # Last failure reason (for compact batch mode error tracking)
         self.last_fail_reason: str = ""
-        
+
+        # Track backup archives created during session (for abort message)
+        self.backup_archives_created: List[Path] = []
+
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._handle_signal)
         signal.signal(signal.SIGTERM, self._handle_signal)
@@ -1656,6 +1659,11 @@ class DoviConvertApp:
         print(f"\n{MAGENTA}[!] Process Interrupted by User.{RESET}")
         print(f"{MAGENTA}[!] Cleaning up temporary files... Done.{RESET}")
         print(f"{GREEN}[✓] Original Source file is safe and untouched.{RESET}")
+        if self.backup_archives_created:
+            if len(self.backup_archives_created) == 1:
+                print(f"{CYAN}[i] Backup preserved: {self.backup_archives_created[0].name}{RESET}")
+            else:
+                print(f"{CYAN}[i] Backup(s) preserved: {len(self.backup_archives_created)} .dovi archive(s){RESET}")
         sys.exit(130)
     
     def _cleanup(self) -> None:
@@ -2407,6 +2415,7 @@ class DoviConvertApp:
 
             if archive_path.exists():
                 self._backup_archive_path = archive_path  # Track for final output
+                self.backup_archives_created.append(archive_path)  # Track for abort message
                 if mode == "manual" or self.config.verbose_mode:
                     print(f"  {BLUE}Backup already exists:{RESET} {archive_path.name}")
             else:
@@ -2428,6 +2437,7 @@ class DoviConvertApp:
                     return 1
 
                 self._backup_archive_path = archive_path  # Track for final output
+                self.backup_archives_created.append(archive_path)  # Track for abort message
 
                 if mode == "manual" or self.config.verbose_mode:
                     archive_size = get_file_size(archive_path)
@@ -2731,6 +2741,9 @@ class DoviConvertApp:
             skipped = stats.queue_count - len(stats.success_list) - len(stats.fail_list)
             if skipped > 0:
                 print(f"Skipped:       {MAGENTA}{skipped}{RESET} file{'s' if skipped != 1 else ''} (aborted)")
+        if self.backup_archives_created:
+            count = len(self.backup_archives_created)
+            print(f"Backups:       {CYAN}{count}{RESET} .dovi archive{'s' if count != 1 else ''} preserved")
         print(f"Time elapsed:  {minutes}m {seconds:02d}s")
         if self.config.output_dir:
             print(f"Output:        {BLUE}{self.config.output_dir}{RESET}")
@@ -2787,6 +2800,10 @@ class DoviConvertApp:
             skipped = stats.queue_count - len(stats.success_list) - len(stats.fail_list)
             if skipped > 0:
                 print(f"Skipped:       {MAGENTA}{skipped}{RESET} file{'s' if skipped != 1 else ''} (aborted)")
+
+        if self.backup_archives_created:
+            count = len(self.backup_archives_created)
+            print(f"Backups:       {CYAN}{count}{RESET} .dovi archive{'s' if count != 1 else ''} preserved")
 
         if stats.fail_list:
             print()
