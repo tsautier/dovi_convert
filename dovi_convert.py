@@ -1603,7 +1603,8 @@ class DoviConvertApp:
         self.media = MediaToolWrapper(debug_mode=config.debug_mode)
         self.batch_running = False
         self.abort_requested = False
-        
+        self.current_command: Optional[str] = None
+
         # Current file state
         self.video_info: Optional[VideoInfo] = None
         self.scan_result: Optional[ScanResult] = None
@@ -1656,14 +1657,30 @@ class DoviConvertApp:
         # In batch mode, return to let the batch loop print its summary
         if self.batch_running:
             return
-        print(f"\n{MAGENTA}[!] Process Interrupted by User.{RESET}")
-        print(f"{MAGENTA}[!] Cleaning up temporary files... Done.{RESET}")
-        print(f"{GREEN}[✓] Original Source file is safe and untouched.{RESET}")
-        if self.backup_archives_created:
-            if len(self.backup_archives_created) == 1:
-                print(f"{CYAN}[i] Backup preserved: {self.backup_archives_created[0].name}{RESET}")
-            else:
-                print(f"{CYAN}[i] Backup(s) preserved: {len(self.backup_archives_created)} .dovi archive(s){RESET}")
+
+        # Context-appropriate interrupt messages
+        cmd = self.current_command
+        if cmd == "convert":
+            print(f"\n{MAGENTA}[!] Process Interrupted by User.{RESET}")
+            print(f"{MAGENTA}[!] Cleaning up temporary files... Done.{RESET}")
+            print(f"{GREEN}[✓] Original Source file is safe and untouched.{RESET}")
+            if self.backup_archives_created:
+                if len(self.backup_archives_created) == 1:
+                    print(f"{CYAN}[i] Backup preserved: {self.backup_archives_created[0].name}{RESET}")
+                else:
+                    print(f"{CYAN}[i] Backup(s) preserved: {len(self.backup_archives_created)} .dovi archive(s){RESET}")
+        elif cmd == "backup":
+            print(f"\nBackup cancelled.")
+        elif cmd == "restore":
+            print(f"\nRestore cancelled. Original file unchanged.")
+        elif cmd == "scan":
+            print(f"\nScan cancelled.")
+        elif cmd == "inspect":
+            print(f"\nInspect cancelled.")
+        elif cmd == "cleanup":
+            print(f"\nCleanup cancelled.")
+        else:
+            print(f"\nCancelled.")
         sys.exit(130)
     
     def _cleanup(self) -> None:
@@ -3783,6 +3800,8 @@ def dispatch_command(app: 'DoviConvertApp', parsed: ParsedArgs) -> int:
             return 1
     
     # Dispatch to command handlers
+    app.current_command = parsed.command
+
     if parsed.command == "":
         UpdateChecker.check_foreground()
         HelpText.print_usage()
