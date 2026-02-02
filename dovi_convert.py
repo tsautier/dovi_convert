@@ -1261,16 +1261,6 @@ class BackupManager:
         self.app = app
         self.media = app.media
         self.config = app.config
-        self.temp_files: List[Path] = []
-
-    def _cleanup_temp(self) -> None:
-        """Remove temporary files created during backup/restore."""
-        for f in self.temp_files:
-            try:
-                f.unlink(missing_ok=True)
-            except Exception:
-                pass
-        self.temp_files.clear()
 
     def _get_archive_path(self, filepath: Path) -> Path:
         """Determine archive output path based on config."""
@@ -1279,11 +1269,14 @@ class BackupManager:
             return self.config.output_dir / archive_name
         return filepath.parent / archive_name
 
-    def _get_temp_path(self, filename: str) -> Path:
-        """Get path for a temporary file, using --temp if specified."""
+    def _get_temp_path(self, filename: str, source_dir: Path) -> Path:
+        """Get path for a temporary file, using --temp if specified, otherwise source directory."""
         if self.config.temp_dir:
-            return self.config.temp_dir / filename
-        return Path(tempfile.gettempdir()) / filename
+            path = self.config.temp_dir / filename
+        else:
+            path = source_dir / filename
+        self.app.temp_files.append(path)  # Register with app for Ctrl-C cleanup
+        return path
 
     def locate_backup(self, filepath: Path) -> Optional[Path]:
         """Find .dovi archive for a given file.
@@ -1326,12 +1319,11 @@ class BackupManager:
 
         return True, ""
 
-    def create_backup(self, filepath: Path, spinner_callback=None) -> Tuple[int, Optional[Path], str]:
+    def create_backup(self, filepath: Path) -> Tuple[int, Optional[Path], str]:
         """Extract EL and create .dovi archive.
 
         Args:
             filepath: Path to the Profile 7 MKV file
-            spinner_callback: Optional callback for spinner updates
 
         Returns:
             (status, archive_path, error_message)
@@ -1344,8 +1336,7 @@ class BackupManager:
             return 1, None, f"Backup already exists: {archive_path}"
 
         # Temp file for EL extraction
-        el_temp = self._get_temp_path(f"{filepath.stem}_el.hevc")
-        self.temp_files.append(el_temp)
+        el_temp = self._get_temp_path(f"{filepath.stem}_el.hevc", filepath.parent)
 
         try:
             # Extract EL via ffmpeg | dovi_tool demux pipeline
@@ -1389,21 +1380,21 @@ class BackupManager:
 
             # Check for user abort
             if ffmpeg_proc.returncode == -2 or dovi_proc.returncode == 130 or self.app.abort_requested:
-                self._cleanup_temp()
+                self.app._cleanup()
                 return 130, None, "Aborted"
 
             if ffmpeg_proc.returncode != 0:
                 stderr_text = ffmpeg_stderr.decode() if ffmpeg_stderr else ""
-                self._cleanup_temp()
+                self.app._cleanup()
                 return 1, None, f"FFmpeg failed: {stderr_text}"
 
             if dovi_proc.returncode != 0:
                 stderr_text = dovi_stderr.decode() if dovi_stderr else ""
-                self._cleanup_temp()
+                self.app._cleanup()
                 return 1, None, f"dovi_tool demux failed: {stderr_text}"
 
             if not el_temp.exists() or el_temp.stat().st_size == 0:
-                self._cleanup_temp()
+                self.app._cleanup()
                 return 1, None, "EL extraction produced empty output"
 
             # Package into uncompressed TAR
@@ -1411,14 +1402,14 @@ class BackupManager:
                 with tarfile.open(archive_path, "w") as tar:
                     tar.add(el_temp, arcname=self.EL_FILENAME)
             except Exception as e:
-                self._cleanup_temp()
+                self.app._cleanup()
                 return 1, None, f"Failed to create archive: {e}"
 
-            self._cleanup_temp()
+            self.app._cleanup()
             return 0, archive_path, ""
 
         except Exception as e:
-            self._cleanup_temp()
+            self.app._cleanup()
             return 1, None, f"Backup failed: {e}"
 
     def _has_dolby_vision(self, filepath: Path) -> bool:
@@ -1427,12 +1418,11 @@ class BackupManager:
         # P8.1 files have DoVi metadata, HDR10 does not
         return "Dolby Vision" in info.mi_info_string or "dvhe" in info.mi_info_string.lower()
 
-    def restore_backup(self, filepath: Path, spinner_callback=None) -> Tuple[int, Optional[Path], str]:
+    def restore_backup(self, filepath: Path) -> Tuple[int, Optional[Path], str]:
         """Restore Profile 7 from P8.1/HDR10 + .dovi archive.
 
         Args:
             filepath: Path to the P8.1 or HDR10 MKV file to restore
-            spinner_callback: Optional callback for spinner updates
 
         Returns:
             (status, restored_path, error_message)
@@ -1459,17 +1449,17 @@ class BackupManager:
         if restored_path.exists():
             return 1, None, f"Restored file already exists: {restored_path}"
 
-        # Temp files
-        bl_temp = self._get_temp_path(f"{filepath.stem}_bl.hevc")
-        bl_clean = self._get_temp_path(f"{filepath.stem}_bl_clean.hevc")
-        el_temp = self._get_temp_path(f"{filepath.stem}_el.hevc")
-        restored_hevc = self._get_temp_path(f"{filepath.stem}_restored.hevc")
-        self.temp_files.extend([bl_temp, bl_clean, el_temp, restored_hevc])
+        # Temp files (registered with app.temp_files via _get_temp_path for Ctrl-C cleanup)
+        source_dir = filepath.parent
+        bl_temp = self._get_temp_path(f"{filepath.stem}_bl.hevc", source_dir)
+        bl_clean = self._get_temp_path(f"{filepath.stem}_bl_clean.hevc", source_dir)
+        el_temp = self._get_temp_path(f"{filepath.stem}_el.hevc", source_dir)
+        restored_hevc = self._get_temp_path(f"{filepath.stem}_restored.hevc", source_dir)
 
         try:
             # Step 1: Extract BL from current file
             ffmpeg_cmd = [
-                "ffmpeg", "-hide_banner", "-loglevel", "error",
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
                 "-i", str(filepath),
                 "-map", "0:v:0",
                 "-c:v", "copy",
@@ -1487,11 +1477,11 @@ class BackupManager:
                 self.app.active_procs.remove(proc)
 
             if self.app.abort_requested:
-                self._cleanup_temp()
+                self.app._cleanup()
                 return 130, None, "Aborted"
 
             if proc.returncode != 0:
-                self._cleanup_temp()
+                self.app._cleanup()
                 return 1, None, f"Failed to extract base layer: {stderr.decode()}"
 
             # Step 2: Detect if P8.1 and sanitize BL
@@ -1511,11 +1501,11 @@ class BackupManager:
                     self.app.active_procs.remove(proc)
 
                 if self.app.abort_requested:
-                    self._cleanup_temp()
+                    self.app._cleanup()
                     return 130, None, "Aborted"
 
                 if proc.returncode != 0:
-                    self._cleanup_temp()
+                    self.app._cleanup()
                     return 1, None, f"Failed to strip RPU from base layer: {stderr.decode()}"
                 bl_for_mux = bl_clean
             else:
@@ -1531,7 +1521,7 @@ class BackupManager:
                         with open(el_temp, "wb") as dst:
                             dst.write(src.read())
             except Exception as e:
-                self._cleanup_temp()
+                self.app._cleanup()
                 return 1, None, f"Failed to extract EL from archive: {e}"
 
             # Step 4: Verify frame counts match
@@ -1557,11 +1547,11 @@ class BackupManager:
                 self.app.active_procs.remove(proc)
 
             if self.app.abort_requested:
-                self._cleanup_temp()
+                self.app._cleanup()
                 return 130, None, "Aborted"
 
             if proc.returncode != 0:
-                self._cleanup_temp()
+                self.app._cleanup()
                 return 1, None, f"Failed to rebuild FEL: {stderr.decode()}"
 
             # Step 6: Final mux with mkvmerge (video from restored, everything else from original)
@@ -1581,16 +1571,16 @@ class BackupManager:
                 self.app.active_procs.remove(proc)
 
             if self.app.abort_requested:
-                self._cleanup_temp()
+                self.app._cleanup()
                 return 130, None, "Aborted"
 
             if proc.returncode not in (0, 1):  # mkvmerge returns 1 for warnings
-                self._cleanup_temp()
+                self.app._cleanup()
                 return 1, None, f"Failed to create restored MKV: {stderr.decode()}"
 
             # Verify restored file
             if not restored_path.exists() or restored_path.stat().st_size == 0:
-                self._cleanup_temp()
+                self.app._cleanup()
                 return 1, None, "Restored file is empty or missing"
 
             # Verify frame count of restored file
@@ -1600,11 +1590,11 @@ class BackupManager:
                 if self.media.debug_mode:
                     self.media.log(f"Frame count mismatch: original={bl_frames}, restored={restored_frames}")
 
-            self._cleanup_temp()
+            self.app._cleanup()
             return 0, restored_path, ""
 
         except Exception as e:
-            self._cleanup_temp()
+            self.app._cleanup()
             return 1, None, f"Restore failed: {e}"
 
 
