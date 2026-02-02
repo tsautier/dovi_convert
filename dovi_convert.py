@@ -1507,6 +1507,15 @@ class BackupManager:
                 if proc.returncode != 0:
                     self.app._cleanup()
                     return 1, None, f"Failed to strip RPU from base layer: {stderr.decode()}"
+                # Delete original BL now that we have the cleaned version - saves ~48GB disk space
+                try:
+                    bl_temp.unlink()
+                    if bl_temp in self.app.temp_files:
+                        self.app.temp_files.remove(bl_temp)
+                    if self.media.debug_mode:
+                        self.media.log(f"Deleted intermediate file early: {bl_temp.name}")
+                except Exception:
+                    pass  # Non-fatal if deletion fails
                 bl_for_mux = bl_clean
             else:
                 # HDR10 - use BL directly
