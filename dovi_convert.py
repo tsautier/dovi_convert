@@ -1596,6 +1596,8 @@ class BackupManager:
             restored_frames = self.media.get_frame_count(restored_path)
             if bl_frames > 0 and restored_frames > 0 and abs(bl_frames - restored_frames) > 1:
                 # Frame count mismatch - warn but don't fail
+                print(f"\n{YELLOW}⚠ Warning: Frame count mismatch (original: {bl_frames}, restored: {restored_frames}){RESET}")
+                print(f"  The restored file may have issues. Verify playback before deleting the original.")
                 if self.media.debug_mode:
                     self.media.log(f"Frame count mismatch: original={bl_frames}, restored={restored_frames}")
 
