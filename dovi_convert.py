@@ -2052,6 +2052,7 @@ class DoviConvertApp:
     
     def convert_turbo(self, input_file: Path, output_file: Path) -> Tuple[int, str]:
         """Standard conversion using pipe mode. Returns (status, error_type)."""
+        self._total_steps = 3
         spinner = Spinner("[1/3] Converting... ")
         self.active_spinner = spinner
         spinner.start()
@@ -2147,14 +2148,15 @@ class DoviConvertApp:
     
     def convert_legacy(self, input_file: Path, output_file: Path) -> int:
         """Safe mode conversion using disk extraction."""
+        self._total_steps = 4
         raw_temp = input_file.with_suffix(".raw.hevc")
         self.temp_files.append(raw_temp)
-        
+
         if self.video_info is None or self.video_info.track_id is None:
             return 1
-        
+
         # Extraction step
-        spinner = Spinner("[1/3] Extracting... ")
+        spinner = Spinner("[1/4] Extracting... ")
         self.active_spinner = spinner
         spinner.start()
 
@@ -2169,10 +2171,10 @@ class DoviConvertApp:
         if ret != 0:
             return 1
 
-        print(f"\r\033[K[1/3] Extracting... Done.")
+        print(f"\r\033[K[1/4] Extracting... Done.")
 
         # Conversion step
-        spinner = Spinner("[1/3] Converting... ")
+        spinner = Spinner("[2/4] Converting... ")
         self.active_spinner = spinner
         spinner.start()
 
@@ -2189,12 +2191,12 @@ class DoviConvertApp:
         raw_temp.unlink(missing_ok=True)
         
         if ret == 0:
-            print(f"\r\033[K[1/3] Converting... Done.")
-        
+            print(f"\r\033[K[2/4] Converting... Done.")
+
         if ret == 130:
             return 130
         return ret
-    
+
     def _convert_validate(self, filepath: Path, mode: str) -> Optional[int]:
         """Validate if file is ready for conversion. Returns return_code if should stop, None if ok."""
         if not filepath.exists():
@@ -2337,7 +2339,7 @@ class DoviConvertApp:
                         return 1
                     return 0
 
-    def _convert_mux(self, filepath: Path, conv_hevc: Path, temp_mkv: Path, fps_orig: str) -> int:
+    def _convert_mux(self, filepath: Path, conv_hevc: Path, temp_mkv: Path, fps_orig: str, total_steps: int = 3) -> int:
         """Mux the new file. Returns 0=success, 1=fail, 130=abort."""
         mux_args = ["-o", str(temp_mkv)]
         
@@ -2353,7 +2355,8 @@ class DoviConvertApp:
         mux_args.append(str(conv_hevc))
         mux_args.extend(["--no-video", str(filepath)])
         
-        spinner = Spinner(f"[2/3] Muxing (Cloning Metadata + {fps_orig}fps)... ")
+        mux_step = total_steps - 1
+        spinner = Spinner(f"[{mux_step}/{total_steps}] Muxing (Cloning Metadata + {fps_orig}fps)... ")
         self.active_spinner = spinner
         spinner.start()
 
@@ -2368,13 +2371,13 @@ class DoviConvertApp:
             print(f"{RED}Mux Failed.{RESET}")
             return 1
 
-        print(f"\r\033[K[2/3] Muxing (Cloning Metadata + {fps_orig}fps)... Done.")
+        print(f"\r\033[K[{mux_step}/{total_steps}] Muxing (Cloning Metadata + {fps_orig}fps)... Done.")
         return 0
 
-    def _convert_finalize(self, filepath: Path, temp_mkv: Path, backup_mkv: Path, conv_hevc: Path, start_time: float, orig_size: int, final_output_path: Path) -> int:
+    def _convert_finalize(self, filepath: Path, temp_mkv: Path, backup_mkv: Path, conv_hevc: Path, start_time: float, orig_size: int, final_output_path: Path, total_steps: int = 3) -> int:
         """Verify, swap and print metrics. Returns 0=success, 1=fail."""
         # Step 4: Verification
-        spinner = Spinner("[3/3] Verifying... ")
+        spinner = Spinner(f"[{total_steps}/{total_steps}] Verifying... ")
         self.active_spinner = spinner
         spinner.start()
 
@@ -2387,20 +2390,20 @@ class DoviConvertApp:
             # DVY-33: Smart Verification Fallback
             # MediaInfo metadata in the source might be wrong (e.g. Avatar.mkv).
             # We run a slow but accurate ffprobe stream count on the ORIGINAL file to double-check.
-            print(f"\r\033[K[3/3] Verifying... {MAGENTA}Metadata Mismatch ({frames_orig} vs {frames_new}). Checking Stream...{RESET}")
-            
+            print(f"\r\033[K[{total_steps}/{total_steps}] Verifying... {MAGENTA}Metadata Mismatch ({frames_orig} vs {frames_new}). Checking Stream...{RESET}")
+
             ff_orig = self.media.get_frame_count_ffprobe(filepath)
-            
+
             if ff_orig == frames_new:
-                 print(f"\r\033[K[3/3] Verifying... {GREEN}Success!{RESET} (Source Metadata was incorrect)")
+                 print(f"\r\033[K[{total_steps}/{total_steps}] Verifying... {GREEN}Success!{RESET} (Source Metadata was incorrect)")
                  if self.config.debug_mode:
                      self.media.log(f"Frame verification mismatch resolved: MI_Orig={frames_orig}, FF_Orig={ff_orig}, New={frames_new}")
             else:
                 self.last_fail_reason = f"Frame mismatch (expected {ff_orig}, got {frames_new})"
-                print(f"\r\033[K[3/3] Verifying... {RED}FAIL: Frame mismatch!{RESET} (Stream Verified: {ff_orig} vs {frames_new})")
+                print(f"\r\033[K[{total_steps}/{total_steps}] Verifying... {RED}FAIL: Frame mismatch!{RESET} (Stream Verified: {ff_orig} vs {frames_new})")
                 return 1
         else:
-            print(f"\r\033[K[3/3] Verifying... {GREEN}Success!{RESET}")
+            print(f"\r\033[K[{total_steps}/{total_steps}] Verifying... {GREEN}Success!{RESET}")
         
         # Print metrics
         self.print_metrics(temp_mkv, frames_new, start_time, orig_size)
@@ -2508,12 +2511,13 @@ class DoviConvertApp:
                 return res
                 
             # 4. Muxing
-            res = self._convert_mux(filepath, conv_hevc, temp_mkv, fps_orig)
+            total_steps = getattr(self, '_total_steps', 3)
+            res = self._convert_mux(filepath, conv_hevc, temp_mkv, fps_orig, total_steps)
             if res != 0:
                 return res
-                
+
             # 5. Finalize
-            return self._convert_finalize(filepath, temp_mkv, backup_mkv, conv_hevc, start_time, orig_size, final_output_path)
+            return self._convert_finalize(filepath, temp_mkv, backup_mkv, conv_hevc, start_time, orig_size, final_output_path, total_steps)
             
         finally:
             # Critical Cleanup: Ensures temp files are deleted even if we return early (e.g. Frame Mismatch)
