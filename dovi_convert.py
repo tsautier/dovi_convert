@@ -3570,16 +3570,18 @@ class DoviConvertApp:
         print(f"{'L1 Analysis:':<26} {frame_count} frames analyzed")
         print(f"{'FEL Peak Brightness:':<26} {robust_peak_str} nits")
         
-        if isinstance(peak_nits, int) and peak_nits > threshold:
+        if frame_count == 0:
+            print(f"{'Brightness Expansion:':<26} N/A")
+        elif peak_nits > threshold:
             print(f"{'Brightness Expansion:':<26} {RED}+{peak_nits - bl_peak} nits (Active){RESET}")
         else:
             print(f"{'Brightness Expansion:':<26} {GREEN}None (Safe){RESET}")
-            print("---------------------------------------------------")
-            print(f"{BOLD}VERDICT:{RESET}    {verdict}")
-            print("---------------------------------------------------")
-            print(advisory)
-            print("=" * 51)
-            print()
+        print("---------------------------------------------------")
+        print(f"{BOLD}VERDICT:{RESET}    {verdict}")
+        print("---------------------------------------------------")
+        print(advisory)
+        print("=" * 51)
+        print()
 
     def cmd_inspect(self, filepath: Path) -> None:
         """Full frame-by-frame RPU inspection."""
