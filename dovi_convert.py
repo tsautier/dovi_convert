@@ -3616,8 +3616,10 @@ class DoviConvertApp:
             return
             
         # 2. Extract RPU
-        temp_rpu = filepath.parent / f"inspect_{int(time.time())}_{os.getpid()}.rpu"
-        temp_json = filepath.parent / f"inspect_{int(time.time())}_{os.getpid()}.json"
+        ts = int(time.time())
+        temp_rpu = filepath.parent / f"inspect_{ts}_{os.getpid()}.rpu"
+        temp_json = filepath.parent / f"inspect_{ts}_{os.getpid()}.json"
+        self.temp_files.extend([temp_rpu, temp_json])
         
         if not self._inspect_extract_rpu_loop(filepath, temp_rpu):
             return
