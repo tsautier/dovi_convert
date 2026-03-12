@@ -2408,6 +2408,7 @@ class DoviConvertApp:
         # Step 5: Create backup and move output
         filepath.rename(backup_mkv)
         
+        self.last_output_path = final_output_path
         if final_output_path == filepath:
             # No -o flag: rename .tmp to .mkv in same directory
             temp_mkv.rename(filepath)
@@ -3083,7 +3084,7 @@ class DoviConvertApp:
                 elif res == 0:
                     spinner.stop(True)
                     stats.success_list.append(filepath.name)
-                    stats.converted_size += get_file_size(filepath)
+                    stats.converted_size += get_file_size(self.last_output_path)
                     if self.scan_result and self.scan_result.verdict == "COMPLEX":
                         stats.success_forced_count += 1
                     else:
