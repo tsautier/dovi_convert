@@ -25,7 +25,6 @@ DESCRIPTION:
 
 from __future__ import annotations
 
-import argparse
 from contextlib import contextmanager
 import json
 import math
@@ -349,6 +348,25 @@ def pq_to_nits(code_val: int) -> int:
         return int(round(nits))
     except (ValueError, OverflowError):
         return 0
+
+
+def find_l1_values(obj, max_vals: list) -> None:
+    """Recursively search JSON structure for L1 max_pq values, appending to max_vals."""
+    if isinstance(obj, dict):
+        for key in ["Level1", "l1", "L1"]:
+            if key in obj:
+                l1_data = obj[key]
+                if isinstance(l1_data, dict):
+                    for mkey in ["max_pq", "max", "Max"]:
+                        if mkey in l1_data:
+                            val = l1_data[mkey]
+                            if isinstance(val, (int, float)):
+                                max_vals.append(int(val))
+        for v in obj.values():
+            find_l1_values(v, max_vals)
+    elif isinstance(obj, list):
+        for item in obj:
+            find_l1_values(item, max_vals)
 
 
 def truncate_middle(filename: str, max_width: int) -> str:
@@ -761,7 +779,7 @@ class MediaToolWrapper:
             with open(self.debug_log, "a") as f:
                 f.write(f"[{timestamp}] {msg}\n")
     
-    def run_logged(self, cmd: List[str], capture: bool = False, cwd: Optional[Path] = None) -> Tuple[int, str, str]:
+    def run_logged(self, cmd: List[str], cwd: Optional[Path] = None) -> Tuple[int, str, str]:
         """Run command with logging. Returns (returncode, stdout, stderr)."""
         if self.debug_mode:
             self.log(f"--- Command: {' '.join(cmd)} ---")
@@ -1621,6 +1639,8 @@ class DoviConvertApp:
         # Track backup archives created during session (for abort message)
         self.backup_archives_created: List[Path] = []
 
+        self._backup_archive_path: Optional[Path] = None
+
         # Setup signal handlers
         signal.signal(signal.SIGINT, self._handle_signal)
         signal.signal(signal.SIGTERM, self._handle_signal)
@@ -1853,25 +1873,7 @@ class DoviConvertApp:
             data = json.loads(json_content)
             max_vals = []
             
-            def find_l1(obj):
-                if isinstance(obj, dict):
-                    # Look for Level1 or l1 keys
-                    for key in ["Level1", "l1", "L1"]:
-                        if key in obj:
-                            l1_data = obj[key]
-                            if isinstance(l1_data, dict):
-                                for mkey in ["max_pq", "max", "Max"]:
-                                    if mkey in l1_data:
-                                        val = l1_data[mkey]
-                                        if isinstance(val, (int, float)):
-                                            max_vals.append(int(val))
-                    for v in obj.values():
-                        find_l1(v)
-                elif isinstance(obj, list):
-                    for item in obj:
-                        find_l1(item)
-            
-            find_l1(data)
+            find_l1_values(data, max_vals)
             return max(max_vals) if max_vals else None
         except Exception:
             return None
@@ -2425,7 +2427,7 @@ class DoviConvertApp:
             print(f"Original Source saved as: {BLUE}{backup_mkv}{RESET}")
 
         # Show EL backup location if --backup was used
-        if hasattr(self, '_backup_archive_path') and self._backup_archive_path:
+        if self._backup_archive_path:
             print(f"Enhancement Layer backed up as: {CYAN}{self._backup_archive_path}{RESET}")
             self._backup_archive_path = None  # Reset for next conversion
 
@@ -3501,24 +3503,7 @@ class DoviConvertApp:
                 data = json.loads(json_content)
                 
                 max_vals = []
-                def find_l1(obj):
-                    if isinstance(obj, dict):
-                        for key in ["Level1", "l1", "L1"]:
-                            if key in obj:
-                                l1_data = obj[key]
-                                if isinstance(l1_data, dict):
-                                    for mkey in ["max_pq", "max", "Max"]:
-                                        if mkey in l1_data:
-                                            val = l1_data[mkey]
-                                            if isinstance(val, (int, float)):
-                                                max_vals.append(int(val))
-                        for v in obj.values():
-                            find_l1(v)
-                    elif isinstance(obj, list):
-                        for item in obj:
-                            find_l1(item)
-                
-                find_l1(data)
+                find_l1_values(data, max_vals)
             
             max_vals.sort()
             frame_count = len(max_vals)
