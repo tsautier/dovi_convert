@@ -233,41 +233,17 @@ class BatchStats:
 # =============================================================================
 
 def version_gt(v1: str, v2: str) -> bool:
-    """
-    Returns True if v1 > v2 (semantic version comparison).
-    Logic:
-    1. Compare numeric base versions (e.g. 7.0.0 > 6.6.4).
-    2. If base versions equal: Stable (no suffix) > Pre-release (with suffix).
-       e.g. 7.0.0 > 7.0.0-beta1
-    """
+    """Returns True if v1 > v2 (semantic version comparison, suffixes ignored)."""
     def parse(v):
-        v = v.lstrip("v")
-        if "-" in v:
-            base, suffix = v.split("-", 1)
-            return base, suffix
-        return v, ""
-
-    base1, suff1 = parse(v1)
-    base2, suff2 = parse(v2)
+        return v.lstrip("v").split("-", 1)[0]
 
     try:
-        p1 = [int(x) for x in base1.split(".")]
-        p2 = [int(x) for x in base2.split(".")]
+        p1 = [int(x) for x in parse(v1).split(".")]
+        p2 = [int(x) for x in parse(v2).split(".")]
     except ValueError:
         return False
 
-    # 1. Numeric Comparison
-    if p1 > p2:
-        return True
-    if p1 < p2:
-        return False
-
-    # 2. Suffix Comparison (Base versions are equal)
-    # If v1 has NO suffix (stable) and v2 HAS suffix (beta), v1 is newer.
-    if not suff1 and suff2:
-        return True
-
-    return False
+    return p1 > p2
 
 
 
