@@ -3539,7 +3539,7 @@ class DoviConvertApp:
         elif peak_nits > threshold:
             verdict = f"{RED}COMPLEX FEL (Active Brightness Expansion){RESET}"
             diff = peak_nits - bl_peak
-            advisory = f"{BOLD}ADVISORY:{RESET}\nFEL Peak ({peak_nits} nits) exceeds Base Layer ({bl_peak} nits).\nThis indicates active brightness expansion in the FEL.\nConversion will likely cause clipping or tone-mapping errors."
+            advisory = f"{BOLD}ADVISORY:{RESET}\nFEL Peak ({peak_nits} nits) exceeds Base Layer ({bl_peak} nits) by {diff} nits.\nThis indicates active brightness expansion in the FEL.\nConversion will likely cause clipping or tone-mapping errors."
             robust_peak_str = str(peak_nits)
         else:
             verdict = f"{GREEN}SIMPLE / SAFE{RESET}"
@@ -3554,7 +3554,7 @@ class DoviConvertApp:
         if frame_count == 0:
             print(f"{'Brightness Expansion:':<26} N/A")
         elif peak_nits > threshold:
-            print(f"{'Brightness Expansion:':<26} {RED}+{peak_nits - bl_peak} nits (Active){RESET}")
+            print(f"{'Brightness Expansion:':<26} {RED}+{diff} nits (Active){RESET}")
         else:
             print(f"{'Brightness Expansion:':<26} {GREEN}None (Safe){RESET}")
         print("---------------------------------------------------")
