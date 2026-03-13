@@ -351,20 +351,6 @@ def pq_to_nits(code_val: int) -> int:
         return 0
 
 
-def send_notification(title: str, message: str) -> None:
-    """Send macOS notification if available."""
-    if sys.platform == "darwin":
-        try:
-            subprocess.run(
-                ["osascript", "-e",
-                 f'display notification "{message}" with title "{title}" sound name "Glass"'],
-                capture_output=True,
-                timeout=5
-            )
-        except Exception:
-            pass
-
-
 def truncate_middle(filename: str, max_width: int) -> str:
     """Truncate filename in the middle, preserving start and end."""
     if len(filename) <= max_width:
@@ -939,17 +925,25 @@ class MediaToolWrapper:
         except Exception:
             return 0
     
-    def get_frame_count(self, filepath: Path) -> int:
-        """Get video frame count."""
+    def get_frame_count(self, filepath: Path) -> Optional[int]:
+        """Get video frame count. Returns None if mediainfo fails or returns non-numeric output."""
+        raw = ""
         try:
             result = subprocess.run(
                 ["mediainfo", "--Output=Video;%FrameCount%", str(filepath)],
                 capture_output=True,
                 text=True
             )
-            return int(result.stdout.strip())
-        except Exception:
-            return 0
+            raw = result.stdout.strip()
+            return int(raw)
+        except ValueError:
+            raw_display = f'"{raw}"' if raw else "(empty)"
+            print(f"{YELLOW}⚠ Frame count unavailable (mediainfo returned: {raw_display}) — verification skipped{RESET}")
+            self.log(f"get_frame_count failed for {filepath}: mediainfo returned {raw_display}")
+            return None
+        except Exception as e:
+            self.log(f"get_frame_count failed for {filepath}: {e}")
+            return None
     
     def get_fps(self, filepath: Path) -> str:
         """Get video frame rate."""
@@ -1504,7 +1498,7 @@ class BackupManager:
                     member = tar.getmember(self.EL_FILENAME)
                     with tar.extractfile(member) as src:
                         with open(el_temp, "wb") as dst:
-                            dst.write(src.read())
+                            shutil.copyfileobj(src, dst, length=1 << 20)
             except Exception as e:
                 self.app._cleanup()
                 return 1, None, f"Failed to extract EL from archive: {e}"
@@ -1570,7 +1564,7 @@ class BackupManager:
 
             # Verify frame count of restored file
             restored_frames = self.media.get_frame_count(restored_path)
-            if bl_frames > 0 and restored_frames > 0 and abs(bl_frames - restored_frames) > 1:
+            if bl_frames is not None and restored_frames is not None and abs(bl_frames - restored_frames) > 1:
                 # Frame count mismatch - warn but don't fail
                 print(f"\n{YELLOW}⚠ Warning: Frame count mismatch (original: {bl_frames}, restored: {restored_frames}){RESET}")
                 print(f"  The restored file may have issues. Verify playback before deleting the original.")
@@ -2353,16 +2347,14 @@ class DoviConvertApp:
     def _convert_finalize(self, filepath: Path, temp_mkv: Path, backup_mkv: Path, conv_hevc: Path, start_time: float, orig_size: int, final_output_path: Path, total_steps: int = 3) -> int:
         """Verify, swap and print metrics. Returns 0=success, 1=fail."""
         # Step 4: Verification
-        spinner = Spinner(f"[{total_steps}/{total_steps}] Verifying... ")
-        self.active_spinner = spinner
-        spinner.start()
+        print(f"[{total_steps}/{total_steps}] Verifying... ", end="", flush=True)
 
         frames_orig = self.media.get_frame_count(filepath)
         frames_new = self.media.get_frame_count(temp_mkv)
-        spinner.stop()
-        self.active_spinner = None
-        
-        if frames_orig and frames_orig != frames_new:
+
+        if frames_orig is None or frames_new is None:
+            print(f"\r\033[K[{total_steps}/{total_steps}] Verifying... {YELLOW}Skipped{RESET} (see warning above)")
+        elif frames_orig != frames_new:
             # DVY-33: Smart Verification Fallback
             # MediaInfo metadata in the source might be wrong (e.g. Avatar.mkv).
             # We run a slow but accurate ffprobe stream count on the ORIGINAL file to double-check.
@@ -2382,7 +2374,7 @@ class DoviConvertApp:
             print(f"\r\033[K[{total_steps}/{total_steps}] Verifying... {GREEN}Success!{RESET}")
         
         # Print metrics
-        self.print_metrics(temp_mkv, frames_new, start_time, orig_size)
+        self.print_metrics(temp_mkv, frames_new or 0, start_time, orig_size)
         
         # Step 5: Create backup and move output
         try:
@@ -3153,8 +3145,6 @@ class DoviConvertApp:
 
             stats.aborted = self.abort_requested
             self._print_verbose_summary(stats)
-
-        send_notification("dovi_convert", "Batch Complete.")
 
     def cmd_backup(self, filepath: Path) -> int:
         """Create EL backup for a Profile 7 file.
