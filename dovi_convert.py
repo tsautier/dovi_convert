@@ -2385,18 +2385,42 @@ class DoviConvertApp:
         self.print_metrics(temp_mkv, frames_new, start_time, orig_size)
         
         # Step 5: Create backup and move output
-        filepath.rename(backup_mkv)
-        
+        try:
+            filepath.rename(backup_mkv)
+        except OSError as e:
+            print(f"{RED}Error: Could not rename original file to backup: {e}{RESET}")
+            return 1
+
         self.last_output_path = final_output_path
         if final_output_path == filepath:
             # No -o flag: rename .tmp to .mkv in same directory
-            temp_mkv.rename(filepath)
+            try:
+                temp_mkv.rename(filepath)
+            except OSError as e:
+                print(f"{RED}Error: Could not place converted file: {e}{RESET}")
+                try:
+                    backup_mkv.rename(filepath)
+                    print(f"Original restored successfully.")
+                except OSError:
+                    print(f"Could not restore original — it is saved as: {BLUE}{backup_mkv}{RESET}")
+                return 1
         else:
             # With -o: move to destination and rename .tmp to .mkv
             spinner = Spinner("Moving to output directory... ")
             self.active_spinner = spinner
             spinner.start()
-            shutil.move(str(temp_mkv), str(final_output_path))
+            try:
+                shutil.move(str(temp_mkv), str(final_output_path))
+            except OSError as e:
+                spinner.stop()
+                self.active_spinner = None
+                print(f"\r\033[K{RED}Error: Could not move converted file to output directory: {e}{RESET}")
+                try:
+                    backup_mkv.rename(filepath)
+                    print(f"Original restored successfully.")
+                except OSError:
+                    print(f"Could not restore original — it is saved as: {BLUE}{backup_mkv}{RESET}")
+                return 1
             spinner.stop()
             self.active_spinner = None
             print(f"\r\033[KMoving to output directory... Done.")
