@@ -13,12 +13,10 @@ Most streaming devices (Apple TV, Shield, Amazon Fire*, etc.) don't support Prof
 
 **dovi_convert** analyzes files first, converts only what's safe, and preserves dynamic metadata for correct Dolby Vision playback.
 
-## What's New (v8.x)
+## What's New (v8.2)
 
-**Major Breaking Changes:** 
+Version 8.2 finally introduces the Backup & Restore feature. It allows you to backup the Dolby Vision enhancement layer before or during a conversion. You can then delete the original file and, as long as you keep the converted file, restore the original at any time using the backed up EL. Benefits: Save tons of disk space. Instead of keeping the original file around, you just store the enhancement layer, which is much smaller. 
 
-- Complete rewrite of the CLI interface (argument parsing and syntax).
-- Merged `batch`and `convert` into a new, unified `convert` command. It now handles both single file and batch conversions of entire directories.
 
 Make sure to read the [Changelog](CHANGELOG.md) for full details.
 
