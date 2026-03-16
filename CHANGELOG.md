@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v8.2.0] - 2026-03-16
+
+Version 8.2 finally introduces the Backup & Restore feature. It allows you to backup the Dolby Vision enhancement layer before or during a conversion. You can then delete the original file and, as long as you keep the converted file, restore the original at any time using the backed up EL. Benefits: Save tons of disk space. Instead of keeping the original file around, you just store the enhancement layer, which is much smaller. 
+
+This release is dedicated to my cat Pixel. Rest in Peace. 
+
+### Added
+- **Backup & Restore:** 
+    - Use `dovi_convert backup movie.mkv` to backup the enhancement layer to `movie.dovi`.
+    - Use `dovi_convert restore movie.mkv` to restore the full DoVi 7.1 file using the converted `movie.mkv` and the `movie.dovi` backup archive. 
+    - Use `dovi_convert convert movie.mkv --backup` to backup the enhancement layer during a conversion
+    - Use `dovi_convert convert movie.mkv --backup --delete` to backup during conversion and delete the original in one go.
+    - Supports `--output` flag to control where the backup archive is stored (Limitation: if backing up during a conversion, the backup archive AND the converted file will go to the output directory - will be improved in the next release).
+    - Refer to the full documentation for more information.
+
+### Changed
+- Improved signal handler to make it context-aware and print appropriate exit messages depending on command used
+- Removed old, unused code
+
+### Removed
+- Removed the macOS notification that was sent after conversions. The feature was never really built out and mostly useless. I may re-introduce a proper notification system in the future. 
+
+
 ## [v8.1.1] - 2026-01-30
 
 This is a maintenance release with some bug fixes and code improvements
