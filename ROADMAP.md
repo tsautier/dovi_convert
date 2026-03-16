@@ -5,9 +5,6 @@ This document outlines planned future development for `dovi_convert`.
 > **Note:** This roadmap is subject to change based on user feedback and technical feasibility.
 
 
-## Planned Next (in development)
-
-- **Backup & Restore** - Dedicated feature to backup original Dolby Vision layers (EL + RPU) into compact `.dovi` archives before conversion. This enables you to convert to P8.1 or HDR10 and delete the original, while retaining the ability to restore (remux) the full Profile 7 source later (e.g., for future FEL-capable hardware). Saves ~90% disk space compared to keeping full backups (~10GB vs ~80GB).
 
 ## Planned for the future (in no particular order)
 
