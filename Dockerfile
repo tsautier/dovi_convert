@@ -139,6 +139,13 @@ COPY <<'EOF' /init
 #!/bin/bash
 set -e
 
+# Reject PUID=0 (root) - running as root defeats the purpose of gosu
+if [ "${PUID}" = "0" ]; then
+    echo "ERROR: PUID=0 (root) is not allowed."
+    echo "Set PUID to a non-root UID (e.g., PUID=99 for UNRAID, PUID=1000 for typical Linux)."
+    exit 1
+fi
+
 # Get or create group with target GID
 EXISTING_GROUP=$(getent group "${PGID}" | cut -d: -f1 || true)
 if [ -z "${EXISTING_GROUP}" ]; then
@@ -148,9 +155,15 @@ else
     TARGET_GROUP="${EXISTING_GROUP}"
 fi
 
-# Create user if it does not exist
-if ! id -u dovi > /dev/null 2>&1; then
-    useradd -u "${PUID}" -g "${TARGET_GROUP}" -m -s /bin/bash dovi
+# Get or create user with target UID
+# -K UID_MIN=1 -K UID_MAX=65535 overrides Debian's default UID_MIN=1000,
+# allowing low UIDs needed by UNRAID (99), Synology, etc.
+EXISTING_USER=$(getent passwd "${PUID}" | cut -d: -f1 || true)
+if [ -z "${EXISTING_USER}" ]; then
+    useradd -K UID_MIN=1 -K UID_MAX=65535 -u "${PUID}" -g "${TARGET_GROUP}" -m -s /bin/bash dovi
+    TARGET_USER="dovi"
+else
+    TARGET_USER="${EXISTING_USER}"
 fi
 
 # Note: We do NOT chown bind-mount directories (/data, /cache).
@@ -175,18 +188,18 @@ fi
 
 # If running interactively (docker run -it), just exec bash as the user
 if [ -t 0 ] && [ "$#" -eq 0 ]; then
-    exec gosu dovi bash
+    exec gosu "${TARGET_USER}" bash
 fi
 
 # If arguments provided (docker run ... bash), run them as user
 if [ "$#" -gt 0 ]; then
-    exec gosu dovi "$@"
+    exec gosu "${TARGET_USER}" "$@"
 fi
 
 # Default: start ttyd web terminal
 echo "Starting web terminal on port 7681..."
-echo "User: dovi (PUID=${PUID}, PGID=${PGID})"
-exec gosu dovi ttyd \
+echo "User: ${TARGET_USER} (PUID=${PUID}, PGID=${PGID})"
+exec gosu "${TARGET_USER}" ttyd \
     --port 7681 \
     --writable \
     -t "theme={'background': '#1e1e2e', 'foreground': '#cdd6f4', 'cursor': '#f5e0dc', 'selection': '#585b70', 'black': '#45475a', 'red': '#f38ba8', 'green': '#a6e3a1', 'yellow': '#f9e2af', 'blue': '#89b4fa', 'magenta': '#f5c2e7', 'cyan': '#94e2d5', 'white': '#bac2de', 'brightBlack': '#585b70', 'brightRed': '#f38ba8', 'brightGreen': '#a6e3a1', 'brightYellow': '#f9e2af', 'brightBlue': '#89b4fa', 'brightMagenta': '#f5c2e7', 'brightCyan': '#94e2d5', 'brightWhite': '#a6adc8'}" \
