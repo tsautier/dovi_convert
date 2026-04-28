@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- **Docker:** Fixed terminal font rendering on Windows browsers when accessing the web terminal. The font fallback chain now starts with `Cascadia Mono` (reliably installed on modern Windows via Windows Terminal) to avoid a Chromium/DirectWrite quirk that caused text to appear stretched and double-spaced. (ref: #40)
+- **Docker:** Container now supports low PUIDs (e.g. `99` for UNRAID, Synology) by overriding Debian's default `UID_MIN=1000` constraint during user creation.
+
 ## [v8.2.0] - 2026-03-16
 
 Version 8.2 finally introduces the Backup & Restore feature. It allows you to backup the Dolby Vision enhancement layer before or during a conversion. You can then delete the original file and, as long as you keep the converted file, restore the original at any time using the backed up EL. Benefits: Save tons of disk space. Instead of keeping the original file around, you just store the enhancement layer, which is much smaller. 
