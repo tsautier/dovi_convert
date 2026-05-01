@@ -42,9 +42,12 @@ LABEL version="1.0"
 # =============================================================================
 # PUID/PGID: Set these to match your NAS user for correct file permissions
 # TZ: Timezone for logs (e.g., Europe/Berlin, America/New_York)
+# UMASK: File creation mask. 022=default (rw-r--r--), 002=group-writable (rw-rw-r--),
+#        000=world-writable (rw-rw-rw-, common for UNRAID)
 ENV PUID=1000
 ENV PGID=1000
 ENV TZ=UTC
+ENV UMASK=022
 ENV TMUX_HISTORY_LIMIT=50000
 
 # Prevent interactive prompts during package installation
@@ -175,6 +178,11 @@ if [ -n "${TZ}" ] && [ -f "/usr/share/zoneinfo/${TZ}" ]; then
     echo "${TZ}" > /etc/timezone
 fi
 
+# Set umask for file creation permissions (inherited by gosu'd processes and child shells)
+if [[ "${UMASK}" =~ ^[0-7]{3,4}$ ]]; then
+    umask "${UMASK}"
+fi
+
 # Configure tmux defaults
 if [[ "${TMUX_HISTORY_LIMIT}" =~ ^[0-9]+$ ]]; then
     TMUX_HISTORY_LIMIT_VALUE="${TMUX_HISTORY_LIMIT}"
@@ -205,7 +213,7 @@ exec gosu "${TARGET_USER}" ttyd \
     -t "theme={'background': '#1e1e2e', 'foreground': '#cdd6f4', 'cursor': '#f5e0dc', 'selection': '#585b70', 'black': '#45475a', 'red': '#f38ba8', 'green': '#a6e3a1', 'yellow': '#f9e2af', 'blue': '#89b4fa', 'magenta': '#f5c2e7', 'cyan': '#94e2d5', 'white': '#bac2de', 'brightBlack': '#585b70', 'brightRed': '#f38ba8', 'brightGreen': '#a6e3a1', 'brightYellow': '#f9e2af', 'brightBlue': '#89b4fa', 'brightMagenta': '#f5c2e7', 'brightCyan': '#94e2d5', 'brightWhite': '#a6adc8'}" \
     -t "fontSize=16" \
     -t "cursorBlink=true" \
-    -t 'fontFamily="JetBrains Mono", "Fira Code", Menlo, Consolas, "DejaVu Sans Mono", monospace' \
+    -t "fontFamily='ZZZNotARealFont', 'JetBrains Mono', 'Fira Code', Menlo, Consolas, 'DejaVu Sans Mono', monospace" \
     -t "scrollback=10000" \
     --debug 1 \
     bash /app/welcome.sh
