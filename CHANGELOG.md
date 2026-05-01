@@ -9,8 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Docker:** New `UMASK` environment variable to control file creation permissions on bind-mounted volumes. Defaults to `022` (standard Linux: `rw-r--r--`). Set to `000` for UNRAID compatibility (`rw-rw-rw-`, matching UNRAID's shared `nobody:users` model) or `002` for typical NAS / multi-user media setups (`rw-rw-r--`, group-writable).
+
 ### Fixed
-- **Docker:** Fixed terminal font rendering on Windows browsers when accessing the web terminal. The font fallback chain now starts with `Cascadia Mono` (reliably installed on modern Windows via Windows Terminal) to avoid a Chromium/DirectWrite quirk that caused text to appear stretched and double-spaced. (ref: #40)
+- **Docker:** Fixed a font rendering issue in the web terminal that caused text to appear stretched or with excessive spacing between characters for many users. (ref: #40)
 - **Docker:** Container now supports low PUIDs (e.g. `99` for UNRAID, Synology) by overriding Debian's default `UID_MIN=1000` constraint during user creation.
 
 ## [v8.2.0] - 2026-03-16
