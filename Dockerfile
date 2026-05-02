@@ -59,7 +59,7 @@ SHELL ["/bin/bash", "-c"]
 # =============================================================================
 # Install system dependencies
 # =============================================================================
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     bash \
     python3 \
     curl \

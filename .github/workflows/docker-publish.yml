@@ -87,6 +87,7 @@ jobs:
           file: Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
+          pull: true
           tags: ${{ steps.config.outputs.TAGS }}
           build-args: |
             TTYD_VERSION=${{ steps.versions.outputs.TTYD_VERSION }}
